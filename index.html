@@ -1201,14 +1201,16 @@ tr:hover .row-actions{opacity:1;}
               <div class="bkws-upload-row"><label class="btn btn-sm">Upload spread art<input type="file" accept="image/*" style="display:none;" onchange="BookWorkspace.uploadSpreadArt(this.files[0])"></label></div>
             </div>
             <div class="bkws-right">
-              <div class="tabs" style="margin:0 0 8px;">
+              <div class="tabs" style="margin:0 0 8px;flex-wrap:wrap;">
                 <button class="tab active" data-bkwstab="preflight" onclick="BookWorkspace.setRightTab('preflight')">Pre-Flight</button>
                 <button class="tab" data-bkwstab="ratio" onclick="BookWorkspace.setRightTab('ratio')">Ratio &amp; Type</button>
-                <button class="tab" data-bkwstab="text" onclick="BookWorkspace.setRightTab('text')">Spread Text</button>
+                <button class="tab" data-bkwstab="text" onclick="BookWorkspace.setRightTab('text')">Text</button>
+                <button class="tab" data-bkwstab="images" onclick="BookWorkspace.setRightTab('images')">Images</button>
               </div>
               <div id="bkwsPreflightWrap"></div>
               <div id="bkwsRatioWrap" style="display:none;"></div>
               <div id="bkwsTextWrap" style="display:none;"></div>
+              <div id="bkwsImgWrap" style="display:none;"></div>
             </div>
           </div>
           <div class="bkws-bottom">
@@ -5211,8 +5213,8 @@ const BookWorkspace = {
     </div>`).join('') : '<div class="help-block" style="padding:10px;">No spreads yet — add some from the Spreads tab.</div>';
   },
   selectSpread(id){
-    BookWorkspace.activeSpreadId = id;
-    BookWorkspace.renderPageTree(); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderTextPanel();
+    BookWorkspace.activeSpreadId = id; BookWorkspace.sel = null;
+    BookWorkspace.renderPageTree(); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderTextPanel(); BookWorkspace.renderImagesPanel();
   },
   chunkManuscript(){
     const text = document.getElementById('bkwsManuscript').value;
@@ -5225,8 +5227,8 @@ const BookWorkspace = {
     const wrap = document.getElementById('bkwsChunks'); if(!wrap) return;
     const chunks = BookWorkspace._chunks;
     if(!chunks){ wrap.innerHTML = ''; return; }
-    const p = currentProject(); const used = new Set(p ? projSpreads(p.id).map(x=>(x.text||'').trim()).filter(Boolean) : []);
-    wrap.innerHTML = chunks.length ? chunks.map((c,i)=>`<div class="bkws-chunk" draggable="true" ondragstart="BookWorkspace.dragChunkStart(event,${i})" title="Drag onto a page in the list above, or use the button">${used.has(c)?'<span style="color:var(--good);">✓ </span>':''}${escapeHtml(c.slice(0,160))}${c.length>160?'…':''}
+    const p = currentProject(); const used = new Map(); if(p) projSpreads(p.id).forEach(x=>{ const t=(x.text||'').trim(); if(!t) return; const lbl = 'p.'+(x.pageRange||('#'+x.spreadIndex)); used.set(t,(used.get(t)||[]).concat(lbl)); });
+    wrap.innerHTML = chunks.length ? chunks.map((c,i)=>`<div class="bkws-chunk" draggable="true" ondragstart="BookWorkspace.dragChunkStart(event,${i})" title="Drag onto a page in the list above, or use the button">${used.has(c)?`<span style="display:inline-block;font-family:var(--font-mono);font-size:10px;padding:1px 6px;margin-right:6px;border-radius:3px;background:var(--gold);color:#1a1409;" title="Placed on this page">${escapeHtml(used.get(c).join(', '))}</span>`:''}${escapeHtml(c.slice(0,160))}${c.length>160?'…':''}
       <div><button class="btn btn-sm" style="margin-top:4px;" onclick="BookWorkspace.assignChunkToActive(${i})">→ Put on selected spread</button></div></div>`).join('') : '<div class="help-block">No paragraphs found.</div>';
   },
   dragChunkStart(e,i){ e.dataTransfer.setData('text/plain', String(i)); },
@@ -5243,14 +5245,14 @@ const BookWorkspace = {
     const chunks = BookWorkspace._chunks||[]; if(isNaN(i) || !chunks[i]) return;
     const s = State.spreads.find(x=>x.id===spreadId); if(!s) return;
     s.text = chunks[i]; DB.put('spreads', s);
-    toast(`Text placed on spread ${s.spreadIndex} — drag it on the canvas or tune it in the Spread Text tab.`);
+    toast(`Text placed on spread ${s.spreadIndex} — drag it on the canvas or tune it in the Text tab.`);
     BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip();
     if(BookWorkspace.activeSpreadId===spreadId){ BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.setRightTab('text'); }
   },
 
   /* ---- Spread text: typeset on the canvas ---- */
   _fontFam(name){ return ['fantasy','cursive','serif','sans-serif','monospace'].includes(name) ? name : (/[,"]/.test(name) ? name : `"${name}"`); },
-  _textBox(s){ return Object.assign({side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:''}, s.textBox||{}); },
+  _textBox(s){ return Object.assign({side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000'}, s.textBox||{}); },
   _paintText(ctx,p,s,PPI,trimW,trimH,bleed,wantHit){
     const txt = (s.text||'').trim(); if(!txt) return null;
     const tb = BookWorkspace._textBox(s);
@@ -5273,7 +5275,7 @@ const BookWorkspace = {
     const ax = cx + (tb.align==='left' ? -maxW/2 : tb.align==='right' ? maxW/2 : 0);
     if(tb.shadow){ ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=px*.18; ctx.shadowOffsetX=px*.05; ctx.shadowOffsetY=px*.05; }
     ctx.fillStyle = color;
-    lines.forEach((ln,i)=>ctx.fillText(ln, ax, cy-blockH/2+lh*(i+.5)));
+    lines.forEach((ln,i)=>{ const yy = cy-blockH/2+lh*(i+.5); if(tb.outline){ ctx.lineJoin='round'; ctx.lineWidth=px*.14; ctx.strokeStyle=tb.outlineColor||'#000'; ctx.strokeText(ln,ax,yy); } ctx.fillText(ln,ax,yy); });
     ctx.restore();
     return {x:cx-maxW/2, y:cy-blockH/2, w:maxW, h:blockH, px0, py0, pw, ph};
   },
@@ -5281,35 +5283,108 @@ const BookWorkspace = {
     const p = currentProject(); const cm = p.coverMeta||{};
     const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, bleed = 0.125;
     const c = document.createElement('canvas'); c.width = Math.round((trimW*2+bleed*2)*ppi); c.height = Math.round((trimH+bleed*2)*ppi);
+    await CoverWorkspace.ensureFonts(cm);
+    const limgs = await BookWorkspace._layerImgs(s);
     const ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,c.width,c.height);
     if(s.imageData){ try{ const img = await BookWorkspace._img(s.imageData); ctx.drawImage(img,0,0,c.width,c.height); }catch(e){} }
+    BookWorkspace._paintLayers(ctx,s,limgs,ppi,trimW,trimH,bleed,null);
     BookWorkspace._paintText(ctx,p,s,ppi,trimW,trimH,bleed,false);
     return c.toDataURL('image/jpeg',0.9);
   },
   wireCanvas(){
     const c = document.getElementById('bkwsCanvas'); if(!c || c._bkwsWired) return; c._bkwsWired = true;
     const pt = e=>{ const r=c.getBoundingClientRect(); return {x:(e.clientX-r.left)*c.width/r.width, y:(e.clientY-r.top)*c.height/r.height}; };
-    const over = q=>{ const h=BookWorkspace._textHit; return h && q.x>=h.x && q.x<=h.x+h.w && q.y>=h.y && q.y<=h.y+h.h; };
+    const hitAt = q=>[...(BookWorkspace._hits||[])].reverse().find(h=>q.x>=h.x && q.x<=h.x+h.w && q.y>=h.y && q.y<=h.y+h.h);
     c.addEventListener('pointerdown',e=>{
-      const q = pt(e); if(!over(q)) return;
+      const q = pt(e), h = hitAt(q);
+      if(!h){ if(BookWorkspace.sel){ BookWorkspace.sel = null; BookWorkspace.drawCanvas(); } return; }
       const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
-      s.textBox = BookWorkspace._textBox(s); const h = BookWorkspace._textHit;
-      BookWorkspace._drag = {s, h, start:q, ox:s.textBox.x, oy:s.textBox.y};
+      let target;
+      if(h.kind==='text'){ s.textBox = BookWorkspace._textBox(s); target = s.textBox; }
+      else target = (s.layers||[]).find(l=>l.id===h.id);
+      if(!target) return;
+      BookWorkspace.sel = {kind:h.kind, id:h.id};
+      BookWorkspace._drag = {s, h, target, start:q, ox:target.x, oy:target.y};
       try{ c.setPointerCapture(e.pointerId); }catch(err){}
       c.style.cursor = 'grabbing';
-      if(BookWorkspace._rightTab!=='text') BookWorkspace.setRightTab('text');
+      const want = h.kind==='text' ? 'text' : 'images';
+      if(BookWorkspace._rightTab!==want) BookWorkspace.setRightTab(want); else { if(want==='images') BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); }
     });
     c.addEventListener('pointermove',e=>{
       const d = BookWorkspace._drag, q = pt(e);
-      if(!d){ c.style.cursor = over(q) ? 'grab' : 'default'; return; }
-      d.s.textBox.x = Math.max(-10,Math.min(110, d.ox+(q.x-d.start.x)/d.h.pw*100));
-      d.s.textBox.y = Math.max(-10,Math.min(110, d.oy+(q.y-d.start.y)/d.h.ph*100));
+      if(!d){ c.style.cursor = hitAt(q) ? 'grab' : 'default'; return; }
+      d.target.x = Math.max(-10,Math.min(110, d.ox+(q.x-d.start.x)/d.h.pw*100));
+      d.target.y = Math.max(-10,Math.min(110, d.oy+(q.y-d.start.y)/d.h.ph*100));
       const ix = document.getElementById('bkwsTb_x'), iy = document.getElementById('bkwsTb_y');
-      if(ix) ix.value = d.s.textBox.x.toFixed(1); if(iy) iy.value = d.s.textBox.y.toFixed(1);
+      if(ix) ix.value = d.target.x.toFixed(1); if(iy) iy.value = d.target.y.toFixed(1);
       BookWorkspace.drawCanvas();
     });
     const end = ()=>{ const d = BookWorkspace._drag; if(!d) return; BookWorkspace._drag = null; c.style.cursor='default'; DB.put('spreads', d.s); };
     c.addEventListener('pointerup',end); c.addEventListener('pointercancel',end);
+  },
+  async _layerImgs(s){
+    const out = {}; if(!s) return out;
+    for(const l of (s.layers||[])){ try{ out[l.id] = await BookWorkspace._img(l.img); }catch(e){} }
+    return out;
+  },
+  _paintLayers(ctx,s,imgs,PPI,trimW,trimH,bleed,hits){
+    const bp = bleed*PPI, pw = trimW*2*PPI, ph = trimH*PPI;
+    (s.layers||[]).forEach(l=>{
+      const im = imgs[l.id]; if(!im) return;
+      const w = (l.w/100)*pw, h = w*im.height/im.width, cx = bp+(l.x/100)*pw, cy = bp+(l.y/100)*ph, a = (l.rot||0)*Math.PI/180;
+      ctx.save(); ctx.globalAlpha = l.opacity==null?1:l.opacity; ctx.translate(cx,cy); ctx.rotate(a); if(l.flip) ctx.scale(-1,1); ctx.drawImage(im,-w/2,-h/2,w,h); ctx.restore();
+      if(hits){ const bw = Math.abs(w*Math.cos(a))+Math.abs(h*Math.sin(a)), bh = Math.abs(w*Math.sin(a))+Math.abs(h*Math.cos(a)); hits.push({kind:'layer', id:l.id, x:cx-bw/2, y:cy-bh/2, w:bw, h:bh, pw, ph}); }
+    });
+  },
+  async uploadFont(file){
+    if(!file) return; const p = currentProject(); if(!p) return; p.coverMeta = p.coverMeta||{}; const cm = p.coverMeta;
+    const name = file.name.replace(/\.[^.]+$/,'').replace(/[^\w \-]/g,'').trim() || 'Custom Font';
+    cm.customFonts = (cm.customFonts||[]).filter(f=>f.name!==name); cm.customFonts.push({name, data:await CoverWorkspace._readFile(file)});
+    await CoverWorkspace.ensureFonts(cm);
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
+    if(s){ s.textBox = BookWorkspace._textBox(s); s.textBox.font = name; s.textBox.styleId = ''; await DB.put('spreads',s); }
+    await DB.put('projects',p); BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); toast('Font "'+name+'" added — it is also available in the Cover workspace.');
+  },
+  /* ---- image / PNG layers on a spread ---- */
+  renderImagesPanel(){
+    const wrap = document.getElementById('bkwsImgWrap'); if(!wrap) return;
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
+    if(!s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list first.</div>'; return; }
+    const layers = s.layers||[]; const sel = BookWorkspace.sel && BookWorkspace.sel.kind==='layer' ? layers.find(l=>l.id===BookWorkspace.sel.id) : null;
+    const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round((sel[key]==null?(key==='opacity'?1:0):sel[key])*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setLayer('${key}',this.value)"></div>`;
+    wrap.innerHTML = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Add PNGs (transparent decorations, speech bubbles, title art) or photos on top of this spread's art. Drag them on the canvas.</div>
+      <label class="btn btn-sm btn-gold" style="cursor:pointer;margin-bottom:8px;">+ Add PNG / image<input type="file" accept="image/*" style="display:none;" onchange="BookWorkspace.addLayer(this.files[0]); this.value='';"></label>
+      ${layers.map((l,i)=>`<div class="bkws-page-tree-row ${sel&&sel.id===l.id?'active':''}" onclick="BookWorkspace.selectLayer('${l.id}')"><img src="${l.img}" style="width:26px;height:26px;object-fit:contain;background:#333;border-radius:3px;"><span class="txt">${escapeHtml(l.name||'image')}</span>
+        <button class="btn btn-sm" style="padding:0 5px;" title="Move down (behind)" onclick="event.stopPropagation();BookWorkspace.moveLayer('${l.id}',-1)">▼</button><button class="btn btn-sm" style="padding:0 5px;" title="Move up (in front)" onclick="event.stopPropagation();BookWorkspace.moveLayer('${l.id}',1)">▲</button>
+        <button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();BookWorkspace.removeLayer('${l.id}')">✕</button></div>`).join('') || '<div class="help-block">No images on this spread yet.</div>'}
+      ${sel ? `<div style="margin-top:10px;">
+        <div class="cvws-field-row">${num('x','X %',-10,110,.5)}${num('y','Y %',-10,110,.5)}</div>
+        <div class="cvws-field-row">${num('w','Width %',2,200,1)}${num('rot','Rotate °',-180,180,1)}</div>
+        ${num('opacity','Opacity (0–1)',0,1,.05)}
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px;"><input type="checkbox" ${sel.flip?'checked':''} onchange="BookWorkspace.setLayer('flip',this.checked)"> Flip horizontally</label></div>` : ''}`;
+  },
+  async addLayer(file){
+    if(!file) return; const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s){ toast('Select a spread first.'); return; }
+    const l = {id:uid(), name:file.name, img:await CoverWorkspace._readFile(file), x:50, y:50, w:30, rot:0, opacity:1, flip:false};
+    s.layers = (s.layers||[]).concat([l]); BookWorkspace.sel = {kind:'layer', id:l.id};
+    await DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas();
+  },
+  selectLayer(id){ BookWorkspace.sel = {kind:'layer', id}; BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); },
+  moveLayer(id,dir){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return; const a = s.layers||[]; const i = a.findIndex(l=>l.id===id), j = i+dir;
+    if(i<0 || j<0 || j>=a.length) return; [a[i],a[j]] = [a[j],a[i]]; DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas();
+  },
+  removeLayer(id){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+    s.layers = (s.layers||[]).filter(l=>l.id!==id); if(BookWorkspace.sel && BookWorkspace.sel.id===id) BookWorkspace.sel = null;
+    DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas();
+  },
+  setLayer(key,val){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s || !BookWorkspace.sel) return;
+    const l = (s.layers||[]).find(x=>x.id===BookWorkspace.sel.id); if(!l) return;
+    if(['x','y','w','rot','opacity'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
+    l[key] = val; clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300); BookWorkspace.drawCanvas();
   },
   renderTextPanel(){
     const wrap = document.getElementById('bkwsTextWrap'); if(!wrap) return;
@@ -5317,7 +5392,8 @@ const BookWorkspace = {
     if(!p || !s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list to add text to it.</div>'; return; }
     const tb = BookWorkspace._textBox(s); const styles = p.typographyStyles||[];
     const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round(tb[key]*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setTextBox('${key}',this.value)"></div>`;
-    const fonts = CoverWorkspace.FONTS;
+    const fonts = CoverWorkspace.FONTS.concat(((p.coverMeta||{}).customFonts||[]).map(f=>f.name));
+    const sw = ['#ffffff','#000000','#f4ead6','#c9a15a','#e8453c','#2f6fdb','#2e9e5b','#f2c230'];
     wrap.innerHTML = `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Spread ${s.spreadIndex} text. Drag it on the canvas to move it.</div>
       <div class="field"><label>Text</label><textarea rows="6" oninput="BookWorkspace.setSpreadText(this.value)" placeholder="Type, or send a paragraph from the manuscript">${escapeHtml(s.text||'')}</textarea></div>
@@ -5326,12 +5402,16 @@ const BookWorkspace = {
       <div class="field"><label>Typography style</label><select onchange="BookWorkspace.setTextBox('styleId',this.value)"><option value="">Custom</option>${styles.map(st=>`<option value="${st.id}" ${tb.styleId===st.id?'selected':''}>${escapeHtml(st.name)}</option>`).join('')}</select></div>
       ${tb.styleId ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Font, size and color come from the style (edit them under Ratio &amp; Type → Pre-Flight panel → Typography Styles).</div>' : `
       <div class="field"><label>Font</label><select onchange="BookWorkspace.setTextBox('font',this.value)">${fonts.map(f=>`<option ${tb.font===f?'selected':''}>${f}</option>`).join('')}</select></div>
-      <div class="cvws-field-row">${num('size','Size (pt)',6,120,1)}<div class="field"><label>Color</label><input type="color" value="${tb.color}" oninput="BookWorkspace.setTextBox('color',this.value)"></div></div>`}
+      <label class="btn btn-sm" style="cursor:pointer;margin-bottom:8px;">+ Font from file (.ttf/.otf/.woff)<input type="file" accept=".ttf,.otf,.woff,.woff2" style="display:none;" onchange="BookWorkspace.uploadFont(this.files[0]); this.value='';"></label>
+      <div class="cvws-field-row">${num('size','Size (pt)',6,120,1)}<div class="field"><label>Color</label><input type="color" value="${tb.color}" oninput="BookWorkspace.setTextBox('color',this.value)" onchange="BookWorkspace.renderTextPanel()"></div></div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">${sw.map(c=>`<button title="${c}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${tb.color.toLowerCase()===c?'var(--gold-bright)':'var(--border)'};background:${c};cursor:pointer;padding:0;" onclick="BookWorkspace.setTextBox('color','${c}'); BookWorkspace.renderTextPanel();"></button>`).join('')}</div>`}
       <div class="cvws-field-row">${num('x','X %',-10,110,.5)}${num('y','Y %',-10,110,.5)}</div>
       <div class="cvws-field-row">${num('w','Width %',10,100,1)}${num('lh','Line height',.8,3,.05)}</div>
       <div style="display:flex;gap:12px;margin:6px 0;">
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.shadow?'checked':''} onchange="BookWorkspace.setTextBox('shadow',this.checked)"> Shadow</label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.panel?'checked':''} onchange="BookWorkspace.setTextBox('panel',this.checked)"> Dark panel</label></div>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.panel?'checked':''} onchange="BookWorkspace.setTextBox('panel',this.checked)"> Dark panel</label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.outline?'checked':''} onchange="BookWorkspace.setTextBox('outline',this.checked); BookWorkspace.renderTextPanel();"> Outline</label></div>
+      ${tb.outline?`<div class="field"><label>Outline color</label><input type="color" value="${tb.outlineColor}" oninput="BookWorkspace.setTextBox('outlineColor',this.value)"></div>`:''}
       <button class="btn btn-sm btn-danger" onclick="BookWorkspace.setSpreadText(''); BookWorkspace.renderTextPanel();">Clear text</button>`;
   },
   setSpreadText(v){
@@ -5364,6 +5444,12 @@ const BookWorkspace = {
     const p = currentProject(); const canvas = document.getElementById('bkwsCanvas'); if(!canvas) return;
     if(!p){ canvas.width=0; canvas.height=0; return; }
     const cm = p.coverMeta || {};
+    const token = BookWorkspace._dt = (BookWorkspace._dt||0)+1;
+    const s0 = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
+    await CoverWorkspace.ensureFonts(cm);
+    let artImg = null; if(s0 && s0.imageData){ try{ artImg = await BookWorkspace._img(s0.imageData); }catch(e){} }
+    const limgs = await BookWorkspace._layerImgs(s0);
+    if(token!==BookWorkspace._dt) return;
     const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5;
     const bleed = 0.125; const spreadW = trimW*2, spreadH = trimH; const PPI = 90;
     canvas.width = Math.max(1, Math.round((spreadW+2*bleed)*PPI));
@@ -5374,16 +5460,23 @@ const BookWorkspace = {
     const dimsLbl = document.getElementById('bkwsDims');
     if(dimsLbl) dimsLbl.textContent = s ? `#${s.spreadIndex} · ${(spreadW+2*bleed).toFixed(2)}"×${(spreadH+2*bleed).toFixed(2)}" w/ bleed` : '';
     if(s && s.imageData){
-      try{ const img = await BookWorkspace._img(s.imageData); ctx.drawImage(img,0,0,canvas.width,canvas.height); }catch(e){}
+      if(artImg) ctx.drawImage(artImg,0,0,canvas.width,canvas.height);
     } else {
       ctx.fillStyle = '#666'; ctx.font = '16px monospace'; ctx.textAlign = 'center';
       ctx.fillText(s ? 'No art uploaded for this spread' : 'Select a spread', canvas.width/2, canvas.height/2);
     }
     const guides = p.bookGuides || {bleed:true,trim:true,safety:true,gutter:true,cmyk:false};
     const bleedPx = bleed*PPI;
-    BookWorkspace._textHit = s ? BookWorkspace._paintText(ctx,p,s,PPI,trimW,trimH,bleed,true) : null;
-    if(BookWorkspace._textHit && BookWorkspace._rightTab==='text'){
-      const h = BookWorkspace._textHit; ctx.save(); ctx.strokeStyle='rgba(80,200,255,.9)'; ctx.setLineDash([5,3]); ctx.lineWidth=1.5; ctx.strokeRect(h.x-4,h.y-4,h.w+8,h.h+8); ctx.restore();
+    const hits = [];
+    if(s){
+      BookWorkspace._paintLayers(ctx,s,limgs,PPI,trimW,trimH,bleed,hits);
+      const th = BookWorkspace._paintText(ctx,p,s,PPI,trimW,trimH,bleed,true);
+      if(th) hits.push(Object.assign({kind:'text', id:'text'}, th));
+    }
+    BookWorkspace._hits = hits;
+    const sel = BookWorkspace.sel && hits.find(h=>h.kind===BookWorkspace.sel.kind && h.id===BookWorkspace.sel.id);
+    if(sel && (BookWorkspace._rightTab==='text' || BookWorkspace._rightTab==='images')){
+      ctx.save(); ctx.strokeStyle='rgba(80,200,255,.9)'; ctx.setLineDash([5,3]); ctx.lineWidth=1.5; ctx.strokeRect(sel.x-4,sel.y-4,sel.w+8,sel.h+8); ctx.restore();
     }
     if(guides.bleed!==false){
       ctx.save(); ctx.strokeStyle='rgba(255,80,80,.85)'; ctx.setLineDash([6,5]); ctx.lineWidth=1.5;
@@ -5462,7 +5555,7 @@ const BookWorkspace = {
     const styles = p ? (p.typographyStyles||[]) : [];
     wrap.innerHTML = styles.length ? styles.map(st=>`<div class="bkws-type-style">
       <input type="color" value="${st.color||'#e8e2d6'}" style="width:26px;padding:0;" onchange="BookWorkspace.updateTypeStyle('${st.id}','color',this.value)">
-      <select onchange="BookWorkspace.updateTypeStyle('${st.id}','fontFamily',this.value)" style="width:88px;font-size:10px;">${['Georgia, serif','Verdana, sans-serif','"Courier New", monospace','"Comic Sans MS", cursive','"Trebuchet MS", sans-serif'].map(f=>`<option value='${f}' ${st.fontFamily===f?'selected':''}>${f.split(',')[0].replace(/"/g,'')}</option>`).join('')}</select>
+      <select onchange="BookWorkspace.updateTypeStyle('${st.id}','fontFamily',this.value)" style="width:88px;font-size:10px;">${['Georgia, serif','Verdana, sans-serif','"Courier New", monospace','"Comic Sans MS", cursive','"Trebuchet MS", sans-serif'].concat((((p&&p.coverMeta)||{}).customFonts||[]).map(f=>'"'+f.name+'"')).map(f=>`<option value='${f}' ${st.fontFamily===f?'selected':''}>${f.split(',')[0].replace(/"/g,'')}</option>`).join('')}</select>
       <input type="number" value="${st.size||16}" style="width:44px;" onchange="BookWorkspace.updateTypeStyle('${st.id}','size',this.value)">
       <span class="preview" style="font-family:${st.fontFamily||'Georgia, serif'};font-size:${Math.min(st.size||16,16)}px;color:${st.color||'#e8e2d6'};">${escapeHtml(st.name)}</span>
       <button class="btn btn-sm btn-danger" style="padding:1px 6px;" onclick="BookWorkspace.removeTypeStyle('${st.id}')">×</button>
@@ -5512,7 +5605,9 @@ const BookWorkspace = {
     document.getElementById('bkwsPreflightWrap').style.display = tab==='preflight' ? '' : 'none';
     document.getElementById('bkwsRatioWrap').style.display = tab==='ratio' ? '' : 'none';
     document.getElementById('bkwsTextWrap').style.display = tab==='text' ? '' : 'none';
+    document.getElementById('bkwsImgWrap').style.display = tab==='images' ? '' : 'none';
     BookWorkspace._rightTab = tab;
+    if(tab==='images') BookWorkspace.renderImagesPanel();
     if(tab==='ratio') BookWorkspace.renderRatio();
     if(tab==='text') BookWorkspace.renderTextPanel();
     BookWorkspace.drawCanvas();
