@@ -447,7 +447,7 @@ tr:hover .row-actions{opacity:1;}
 .cvws-field-row .field{flex:1;}
 .cvws-layer-row{display:flex;align-items:center;gap:7px;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--border-soft);}
 .cvws-layer-row:last-child{border-bottom:none;}
-.cvws-mock3d-stage{perspective:900px;display:flex;align-items:center;justify-content:center;height:300px;position:relative;cursor:grab;touch-action:none;user-select:none;}
+.cvws-mock3d-stage{overflow:hidden;perspective:900px;display:flex;align-items:center;justify-content:center;height:300px;position:relative;cursor:grab;touch-action:none;user-select:none;}
 .cvws-mock3d-book{position:relative;transform-style:preserve-3d;}
 .cvws-mock3d-book .mf{position:absolute;top:0;left:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background-size:100% 100%;background-color:#2a2a2a;overflow:hidden;}
 .cvws-mock3d-book .mf-front::after,.cvws-mock3d-book .mf-back::after,.cvws-mock3d-book.spined .mf-spine::after{content:'';position:absolute;inset:0;pointer-events:none;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .25  0 0 0 0 .2  0 0 0 0 .15  0 0 0 .55 -.12'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),linear-gradient(115deg,rgba(255,255,255,.14),rgba(255,255,255,0) 45%,rgba(0,0,0,.12));}
@@ -1086,6 +1086,7 @@ tr:hover .row-actions{opacity:1;}
                   <button class="btn btn-sm" onclick="Workspace2D.seekToFrame(parseInt(document.getElementById('ws2dGotoFrame').value,10)||0)">Go</button>
                 </label>
                 <span class="ws2d-time-label" id="ws2dTimeLabel">0:00 / 0:00</span>
+                <span id="ws2dZoomCtl" style="margin-left:auto;"></span>
               </div>
             </div>
             <div class="ws2d-right">
@@ -1196,8 +1197,8 @@ tr:hover .row-actions{opacity:1;}
               </div>
             </div>
             <div class="bkws-center">
-              <div class="ws2d-panel-head">Spread <span style="font-weight:400;font-size:11px;" id="bkwsDims"></span></div>
-              <div class="bkws-canvas-wrap"><canvas id="bkwsCanvas"></canvas></div>
+              <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Spread <span style="font-weight:400;font-size:11px;" id="bkwsDims"></span></span><span id="bkwsZoomCtl"></span></div>
+              <div class="bkws-canvas-wrap" id="bkwsCanvasWrap"><canvas id="bkwsCanvas"></canvas></div>
               <div class="bkws-upload-row"><label class="btn btn-sm">Upload spread art<input type="file" accept="image/*" style="display:none;" onchange="BookWorkspace.uploadSpreadArt(this.files[0])"></label></div>
             </div>
             <div class="bkws-right">
@@ -1220,13 +1221,13 @@ tr:hover .row-actions{opacity:1;}
         </div>
       </div>
       <div class="modal-backdrop" id="bkwsDummyBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:950;align-items:center;justify-content:center;flex-direction:column;">
-        <div id="bkwsDummyImgWrap" style="max-width:90vw;max-height:78vh;position:relative;"><img id="bkwsDummyImg" style="max-width:90vw;max-height:78vh;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);"></div>
+        <div id="bkwsDummyImgWrap" style="width:90vw;height:72vh;position:relative;overflow:auto;display:flex;"><img id="bkwsDummyImg" style="max-width:90vw;max-height:72vh;margin:auto;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);"></div>
         <div style="display:flex;gap:10px;align-items:center;margin-top:16px;">
           <button class="btn" onclick="BookWorkspace.dummyStep(-1)">⏮ Prev</button>
           <button class="btn btn-gold" id="bkwsDummyPlayBtn" onclick="BookWorkspace.dummyTogglePlay()">▶ Auto-play</button>
           <button class="btn" onclick="BookWorkspace.dummyStep(1)">Next ⏭</button>
           <span id="bkwsDummyLabel" style="color:var(--text-muted);font-family:var(--font-mono);font-size:12px;"></span>
-          <button class="btn btn-ghost" onclick="BookWorkspace.closeDigitalDummy()">Close ✕</button>
+          <span id="bkwsDummyZoomCtl"></span><button class="btn btn-ghost" onclick="BookWorkspace.closeDigitalDummy()">Close ✕</button>
         </div>
       </div>
 
@@ -1247,8 +1248,8 @@ tr:hover .row-actions{opacity:1;}
               <div id="cvwsJacketWrap" class="cvws-scroll"></div>
             </div>
             <div class="cvws-center">
-              <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Flat Cover <span style="font-weight:400;font-size:11px;" id="cvwsDims"></span></span><button class="btn btn-sm btn-gold" onclick="CoverWorkspace.exportFullPdf()" title="One clean page: art, text, PNGs, author photo and ISBN barcode">⬇ Export Full PDF</button></div>
-              <div class="cvws-canvas-wrap"><canvas id="cvwsCanvas"></canvas></div>
+              <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Flat Cover <span style="font-weight:400;font-size:11px;" id="cvwsDims"></span></span><span id="cvwsZoomCtl" style="margin-left:auto;"></span><button class="btn btn-sm btn-gold" onclick="CoverWorkspace.exportFullPdf()" title="One clean page: art, text, PNGs, author photo and ISBN barcode">⬇ Export Full PDF</button></div>
+              <div class="cvws-canvas-wrap" id="cvwsCanvasWrap"><canvas id="cvwsCanvas"></canvas></div>
             </div>
             <div class="cvws-right">
               <div class="tabs" style="margin:0 0 8px;">
@@ -1714,7 +1715,8 @@ tr:hover .row-actions{opacity:1;}
   </div>
 </div>
 <div class="board-lightbox" id="boardLightbox" onclick="Lightbox.close()">
-  <img id="boardLightboxImg" src="">
+  <div id="boardLightboxWrap" style="width:90vw;height:72vh;overflow:auto;display:flex;cursor:default;" onclick="event.stopPropagation()"><img id="boardLightboxImg" src="" style="margin:auto;"></div>
+  <div class="board-lightbox-controls" onclick="event.stopPropagation()"><span id="boardLbZoomCtl"></span><button class="btn btn-sm" onclick="Lightbox.close()">✕ Close</button></div>
   <div style="color:var(--text-muted);font-size:12px;" id="boardLightboxCaption"></div>
   <div class="board-lightbox-controls" id="boardSlideshowControls" style="display:none;" onclick="event.stopPropagation()">
     <button class="btn btn-sm" onclick="Board.slideshowPrev()">◀ Prev</button>
@@ -4337,8 +4339,89 @@ const CoverLab = {
 };
 
 /* ---------- Book Cover Workspace ---------- */
+/* ---------- Generic zoom / fit-to-view for every viewer ---------- */
+const CanvasZoom = {
+  LEVELS:[0.25,0.5,0.75,1,1.5,2,3,4], cfg:{}, _ro:{},
+  register(key,o){
+    const prev = CanvasZoom.cfg[key]; CanvasZoom.cfg[key] = Object.assign({mode:'fit', unlock:[]}, prev||{}, o);
+    CanvasZoom.mount(key); CanvasZoom._wire(key); CanvasZoom.apply(key);
+  },
+  _el(k){ return document.getElementById(CanvasZoom.cfg[k].el); },
+  _wrap(k){ return document.getElementById(CanvasZoom.cfg[k].wrap); },
+  _nat(el){ if(!el) return {w:0,h:0}; if(el.tagName==='CANVAS') return {w:el.width,h:el.height}; if(el.tagName==='VIDEO') return {w:el.videoWidth,h:el.videoHeight}; return {w:el.naturalWidth,h:el.naturalHeight}; },
+  fitScale(k){
+    const el = CanvasZoom._el(k), wrap = CanvasZoom._wrap(k); const n = CanvasZoom._nat(el); if(!wrap || !n.w || !n.h) return 1;
+    const cs = getComputedStyle(wrap);
+    const aw = wrap.clientWidth - parseFloat(cs.paddingLeft||0) - parseFloat(cs.paddingRight||0) - 2;
+    const ah = wrap.clientHeight - parseFloat(cs.paddingTop||0) - parseFloat(cs.paddingBottom||0) - 2;
+    if(aw<=0 || ah<=0) return 1;
+    return Math.max(0.02, Math.min(aw/n.w, ah/n.h));
+  },
+  scale(k){ const c = CanvasZoom.cfg[k]; return c.mode==='fit' ? CanvasZoom.fitScale(k) : c.mode; },
+  apply(k){
+    const c = CanvasZoom.cfg[k]; if(!c) return; const el = CanvasZoom._el(k), wrap = CanvasZoom._wrap(k); if(!el || !wrap) return;
+    const n = CanvasZoom._nat(el); if(!n.w || !n.h || wrap.clientWidth<=0) return;
+    const z = CanvasZoom.scale(k);
+    el.style.width = Math.round(n.w*z)+'px'; el.style.height = Math.round(n.h*z)+'px';
+    el.style.maxWidth = 'none'; el.style.maxHeight = 'none'; el.style.flex = 'none'; el.style.margin = 'auto';
+    (c.unlock||[]).forEach(id=>{ const u = document.getElementById(id); if(u){ u.style.maxWidth='none'; u.style.maxHeight='none'; u.style.flex='none'; u.style.margin='auto'; } });
+    wrap.style.overflow = 'auto';
+    CanvasZoom.updateLabel(k);
+  },
+  mount(k){
+    const c = CanvasZoom.cfg[k]; const box = c.ctl && document.getElementById(c.ctl); if(!box) return;
+    box.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;font-weight:400;text-transform:none;letter-spacing:0;">
+      <button class="btn btn-sm" style="padding:1px 8px;" title="Zoom out" onclick="CanvasZoom.step('${k}',-1)">−</button>
+      <select id="czSel_${k}" style="width:92px;padding:2px 4px;font-size:11px;" onchange="CanvasZoom.pick('${k}',this.value)">
+        <option value="fit">Fit</option>${CanvasZoom.LEVELS.map(l=>`<option value="${l}">${Math.round(l*100)}%</option>`).join('')}<option value="custom" hidden>—</option></select>
+      <button class="btn btn-sm" style="padding:1px 8px;" title="Zoom in" onclick="CanvasZoom.step('${k}',1)">+</button>
+      <button class="btn btn-sm btn-gold" style="padding:1px 8px;" title="Fit the whole thing in view" onclick="CanvasZoom.setMode('${k}','fit')">Fit</button></span>`;
+  },
+  updateLabel(k){
+    const sel = document.getElementById('czSel_'+k); if(!sel) return; const c = CanvasZoom.cfg[k]; const pct = Math.round(CanvasZoom.scale(k)*100);
+    const fitOpt = sel.querySelector('option[value="fit"]'), custom = sel.querySelector('option[value="custom"]');
+    fitOpt.textContent = c.mode==='fit' ? `Fit · ${pct}%` : 'Fit';
+    if(c.mode==='fit'){ sel.value = 'fit'; return; }
+    const lvl = CanvasZoom.LEVELS.find(l=>Math.abs(l-c.mode)<0.005);
+    if(lvl!=null){ sel.value = String(lvl); } else { custom.textContent = pct+'%'; custom.hidden = false; sel.value = 'custom'; }
+  },
+  setMode(k,m){
+    const c = CanvasZoom.cfg[k]; if(!c) return; c.mode = (m==='fit') ? 'fit' : Math.max(0.05,Math.min(8,parseFloat(m)||1));
+    CanvasZoom.apply(k);
+    const w = CanvasZoom._wrap(k); if(w && c.mode==='fit'){ w.scrollLeft = 0; w.scrollTop = 0; }
+  },
+  pick(k,v){ if(v==='custom') return; CanvasZoom.setMode(k,v); },
+  step(k,dir){
+    const cur = CanvasZoom.scale(k); let next;
+    if(dir>0) next = CanvasZoom.LEVELS.find(l=>l>cur*1.02) || CanvasZoom.LEVELS[CanvasZoom.LEVELS.length-1];
+    else next = [...CanvasZoom.LEVELS].reverse().find(l=>l<cur/1.02) || CanvasZoom.LEVELS[0];
+    CanvasZoom._zoomTo(k,next,null);
+  },
+  _zoomTo(k,z,evt){
+    const el = CanvasZoom._el(k), wrap = CanvasZoom._wrap(k); if(!el || !wrap) return;
+    const r0 = el.getBoundingClientRect();
+    const ax = evt ? evt.clientX : wrap.getBoundingClientRect().left + wrap.clientWidth/2, ay = evt ? evt.clientY : wrap.getBoundingClientRect().top + wrap.clientHeight/2;
+    const fx = r0.width ? Math.min(1,Math.max(0,(ax-r0.left)/r0.width)) : .5, fy = r0.height ? Math.min(1,Math.max(0,(ay-r0.top)/r0.height)) : .5;
+    CanvasZoom.setMode(k,z);
+    const r1 = el.getBoundingClientRect();
+    wrap.scrollLeft += (r1.left + fx*r1.width) - ax; wrap.scrollTop += (r1.top + fy*r1.height) - ay;
+  },
+  _wire(k){
+    const c = CanvasZoom.cfg[k], wrap = CanvasZoom._wrap(k); if(!wrap || wrap._czWired) return; wrap._czWired = true;
+    wrap.addEventListener('wheel',e=>{
+      if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault();
+      const cur = CanvasZoom.scale(k); CanvasZoom._zoomTo(k, Math.max(0.05,Math.min(8,cur*(e.deltaY<0?1.12:1/1.12))), e);
+    },{passive:false});
+    if(typeof ResizeObserver!=='undefined'){
+      let raf = 0; CanvasZoom._ro[k] = new ResizeObserver(()=>{ if(CanvasZoom.cfg[k].mode!=='fit') return; cancelAnimationFrame(raf); raf = requestAnimationFrame(()=>CanvasZoom.apply(k)); });
+      CanvasZoom._ro[k].observe(wrap);
+    }
+    const el = CanvasZoom._el(k); (c.events||[]).forEach(ev=>el.addEventListener(ev,()=>CanvasZoom.apply(k)));
+  }
+};
+
 const CoverWorkspace = {
-  mockAngle:-25, _autoRotate:null, abA:null, abB:null, abPos:50, legibilitySize:140, _imgCache:{},
+  mockAngle:-25, mockZoom:1, _autoRotate:null, abA:null, abB:null, abPos:50, legibilitySize:140, _imgCache:{},
   PAPER_STOCKS:{
     white_50:{label:'50lb White Uncoated', caliper:0.0035},
     white_60:{label:'60lb White Uncoated', caliper:0.0040},
@@ -4356,6 +4439,7 @@ const CoverWorkspace = {
   FONTS:['Georgia','Times New Roman','Palatino Linotype','Garamond','Book Antiqua','Arial','Helvetica','Trebuchet MS','Verdana','Impact','Courier New','Brush Script MT','Copperplate','Papyrus','fantasy','cursive'],
 
   render(){
+    CanvasZoom.register('cover',{el:'cvwsCanvas', wrap:'cvwsCanvasWrap', ctl:'cvwsZoomCtl'});
     CoverWorkspace.ensureTexts();
     CoverWorkspace.renderJacket();
     CoverWorkspace.render3DMock();
@@ -4602,6 +4686,7 @@ const CoverWorkspace = {
     const hits = [];
     CoverWorkspace.paint(off.getContext('2d'),g,imgs,cm,{guides:true, placeholders:true, foil:'overlay', hits});
     canvas.width = g.W; canvas.height = g.H; canvas.getContext('2d').drawImage(off,0,0);
+    CanvasZoom.apply('cover');
     CoverWorkspace._hits = hits;
     CoverWorkspace.scheduleMockUpdate();
   },
@@ -4931,6 +5016,8 @@ const CoverWorkspace = {
       <input type="range" id="cvwsMockRot" min="-180" max="180" value="${Math.round(CoverWorkspace.mockAngle)}" oninput="CoverWorkspace.setMockAngle(this.value)" style="width:100%;">
       <label style="font-size:11px;color:var(--text-muted);">Tilt (view from above)</label>
       <input type="range" id="cvwsMockTilt" min="-40" max="40" value="${Math.round(CoverWorkspace.mockTilt)}" oninput="CoverWorkspace.setMockTilt(this.value)" style="width:100%;">
+      <label style="font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;"><span>Zoom</span><span id="cvwsMockZoomLbl">100%</span></label>
+      <div style="display:flex;gap:6px;align-items:center;"><input type="range" id="cvwsMockZoom" min="40" max="300" value="${Math.round((CoverWorkspace.mockZoom||1)*100)}" oninput="CoverWorkspace.setMockZoom(this.value/100)" style="flex:1;"><button class="btn btn-sm btn-gold" title="Reset zoom so the whole book fits" onclick="CoverWorkspace.setMockZoom(1)">Fit</button></div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">
         <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(0,6)">Front</button>
         <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(28,10)">3/4</button>
@@ -4945,11 +5032,14 @@ const CoverWorkspace = {
   },
   applyMockTransform(){
     const book = document.getElementById('cvwsMockBook'); if(!book) return;
-    book.style.transform = `rotateX(${-CoverWorkspace.mockTilt}deg) rotateY(${CoverWorkspace.mockAngle}deg)`;
+    book.style.transform = `scale(${CoverWorkspace.mockZoom||1}) rotateX(${-CoverWorkspace.mockTilt}deg) rotateY(${CoverWorkspace.mockAngle}deg)`;
+    const z = document.getElementById('cvwsMockZoom'); if(z) z.value = Math.round((CoverWorkspace.mockZoom||1)*100);
+    const zl = document.getElementById('cvwsMockZoomLbl'); if(zl) zl.textContent = Math.round((CoverWorkspace.mockZoom||1)*100)+'%';
     const r = document.getElementById('cvwsMockRot'); if(r) r.value = Math.round(((CoverWorkspace.mockAngle+180)%360+360)%360-180);
     const t = document.getElementById('cvwsMockTilt'); if(t) t.value = Math.round(CoverWorkspace.mockTilt);
   },
   setMockAngle(v){ CoverWorkspace.mockAngle = parseFloat(v); CoverWorkspace.applyMockTransform(); },
+  setMockZoom(z){ CoverWorkspace.mockZoom = Math.max(0.4,Math.min(3,z)); CoverWorkspace.applyMockTransform(); },
   setMockTilt(v){ CoverWorkspace.mockTilt = parseFloat(v); CoverWorkspace.applyMockTransform(); },
   mockPreset(a,t){ CoverWorkspace.mockAngle = a; CoverWorkspace.mockTilt = t; CoverWorkspace.applyMockTransform(); },
   wireMockDrag(){
@@ -4959,6 +5049,7 @@ const CoverWorkspace = {
     st.addEventListener('pointermove',e=>{ if(!d) return; CoverWorkspace.mockAngle = d.a+(e.clientX-d.x)*0.7; CoverWorkspace.mockTilt = Math.max(-40,Math.min(40,d.t+(e.clientY-d.y)*0.35)); CoverWorkspace.applyMockTransform(); });
     const end = ()=>{ d = null; st.style.cursor='grab'; };
     st.addEventListener('pointerup',end); st.addEventListener('pointercancel',end);
+    st.addEventListener('wheel',e=>{ e.preventDefault(); CoverWorkspace.setMockZoom((CoverWorkspace.mockZoom||1)*(e.deltaY<0?1.1:1/1.1)); },{passive:false});
   },
   toggleAutoRotate(){
     if(CoverWorkspace._autoRotate){ clearInterval(CoverWorkspace._autoRotate); CoverWorkspace._autoRotate = null; }
@@ -5179,6 +5270,7 @@ const BookWorkspace = {
     document.getElementById('bkwsGCmyk').checked = !!guides.cmyk;
     if(p){ const spreads = projSpreads(p.id); if(!BookWorkspace.activeSpreadId || !spreads.find(s=>s.id===BookWorkspace.activeSpreadId)) BookWorkspace.activeSpreadId = spreads[0] ? spreads[0].id : null; }
     else BookWorkspace.activeSpreadId = null;
+    CanvasZoom.register('book',{el:'bkwsCanvas', wrap:'bkwsCanvasWrap', ctl:'bkwsZoomCtl'});
     const ms = (p && p.manuscriptText) || '';
     BookWorkspace._chunks = ms.trim() ? ms.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean) : null;
     BookWorkspace.renderPageTree();
@@ -5227,7 +5319,7 @@ const BookWorkspace = {
     const wrap = document.getElementById('bkwsChunks'); if(!wrap) return;
     const chunks = BookWorkspace._chunks;
     if(!chunks){ wrap.innerHTML = ''; return; }
-    const p = currentProject(); const used = new Map(); if(p) projSpreads(p.id).forEach(x=>{ const t=(x.text||'').trim(); if(!t) return; const lbl = 'p.'+(x.pageRange||('#'+x.spreadIndex)); used.set(t,(used.get(t)||[]).concat(lbl)); });
+    const p = currentProject(); const used = new Map(); if(p) projSpreads(p.id).forEach(x=>{ const lbl = 'p.'+(x.pageRange||('#'+x.spreadIndex)); BookWorkspace._texts(x).forEach(b=>{ const t=(b.text||'').trim(); if(!t) return; const cur = used.get(t)||[]; if(!cur.includes(lbl)) used.set(t,cur.concat(lbl)); }); });
     wrap.innerHTML = chunks.length ? chunks.map((c,i)=>`<div class="bkws-chunk" draggable="true" ondragstart="BookWorkspace.dragChunkStart(event,${i})" title="Drag onto a page in the list above, or use the button">${used.has(c)?`<span style="display:inline-block;font-family:var(--font-mono);font-size:10px;padding:1px 6px;margin-right:6px;border-radius:3px;background:var(--gold);color:#1a1409;" title="Placed on this page">${escapeHtml(used.get(c).join(', '))}</span>`:''}${escapeHtml(c.slice(0,160))}${c.length>160?'…':''}
       <div><button class="btn btn-sm" style="margin-top:4px;" onclick="BookWorkspace.assignChunkToActive(${i})">→ Put on selected spread</button></div></div>`).join('') : '<div class="help-block">No paragraphs found.</div>';
   },
@@ -5244,18 +5336,44 @@ const BookWorkspace = {
   _assignChunk(i, spreadId){
     const chunks = BookWorkspace._chunks||[]; if(isNaN(i) || !chunks[i]) return;
     const s = State.spreads.find(x=>x.id===spreadId); if(!s) return;
-    s.text = chunks[i]; DB.put('spreads', s);
-    toast(`Text placed on spread ${s.spreadIndex} — drag it on the canvas or tune it in the Text tab.`);
+    if(BookWorkspace._texts(s).some(t=>(t.text||'').trim()===chunks[i].trim())){ toast(`That paragraph is already on spread ${s.spreadIndex}.`); return; }
+    BookWorkspace._newBox(s,chunks[i]); DB.put('spreads', s);
+    toast(`Text added to spread ${s.spreadIndex} (${BookWorkspace._texts(s).length} text box${BookWorkspace._texts(s).length===1?'':'es'}) — drag it on the canvas or tune it in the Text tab.`);
     BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip();
     if(BookWorkspace.activeSpreadId===spreadId){ BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.setRightTab('text'); }
   },
 
   /* ---- Spread text: typeset on the canvas ---- */
   _fontFam(name){ return ['fantasy','cursive','serif','sans-serif','monospace'].includes(name) ? name : (/[,"]/.test(name) ? name : `"${name}"`); },
-  _textBox(s){ return Object.assign({side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000'}, s.textBox||{}); },
-  _paintText(ctx,p,s,PPI,trimW,trimH,bleed,wantHit){
-    const txt = (s.text||'').trim(); if(!txt) return null;
-    const tb = BookWorkspace._textBox(s);
+  _boxDefaults(){ return {text:'', side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000'}; },
+  _texts(s){
+    if(!Array.isArray(s.texts)){
+      s.texts = [];
+      if((s.text||'').trim()) s.texts.push(Object.assign(BookWorkspace._boxDefaults(), s.textBox||{}, {id:uid(), text:s.text}));
+    }
+    return s.texts;
+  },
+  _syncText(s){ s.text = (s.texts||[]).map(t=>(t.text||'').trim()).filter(Boolean).join('\n\n'); },
+  _selBox(s){
+    const a = BookWorkspace._texts(s); if(!a.length) return null;
+    const sel = BookWorkspace.sel;
+    return (sel && sel.kind==='text' && a.find(t=>t.id===sel.id)) || a[0];
+  },
+  _newBox(s,text){
+    const a = BookWorkspace._texts(s);
+    const last = a[a.length-1];
+    const box = Object.assign(BookWorkspace._boxDefaults(), {id:uid(), text:text||'', y: 82-(a.length%4)*16}, last ? {side:last.side, font:last.font, size:last.size, color:last.color, align:last.align, styleId:last.styleId, shadow:last.shadow, panel:last.panel} : {});
+    a.push(box); BookWorkspace._syncText(s); BookWorkspace.sel = {kind:'text', id:box.id};
+    return box;
+  },
+  _paintTexts(ctx,p,s,PPI,trimW,trimH,bleed,hits){
+    BookWorkspace._texts(s).forEach(tb=>{
+      const h = BookWorkspace._paintBox(ctx,p,tb,PPI,trimW,trimH,bleed);
+      if(h && hits) hits.push(Object.assign({kind:'text', id:tb.id}, h));
+    });
+  },
+  _paintBox(ctx,p,tb,PPI,trimW,trimH,bleed){
+    const txt = (tb.text||'').trim(); if(!txt) return null;
     const st = tb.styleId ? (p.typographyStyles||[]).find(x=>x.id===tb.styleId) : null;
     const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font);
     const size = st ? (st.size||16) : tb.size, color = st ? (st.color||'#fff') : tb.color;
@@ -5288,7 +5406,7 @@ const BookWorkspace = {
     const ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,c.width,c.height);
     if(s.imageData){ try{ const img = await BookWorkspace._img(s.imageData); ctx.drawImage(img,0,0,c.width,c.height); }catch(e){} }
     BookWorkspace._paintLayers(ctx,s,limgs,ppi,trimW,trimH,bleed,null);
-    BookWorkspace._paintText(ctx,p,s,ppi,trimW,trimH,bleed,false);
+    BookWorkspace._paintTexts(ctx,p,s,ppi,trimW,trimH,bleed,null);
     return c.toDataURL('image/jpeg',0.9);
   },
   wireCanvas(){
@@ -5300,7 +5418,7 @@ const BookWorkspace = {
       if(!h){ if(BookWorkspace.sel){ BookWorkspace.sel = null; BookWorkspace.drawCanvas(); } return; }
       const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
       let target;
-      if(h.kind==='text'){ s.textBox = BookWorkspace._textBox(s); target = s.textBox; }
+      if(h.kind==='text'){ target = BookWorkspace._texts(s).find(t=>t.id===h.id); }
       else target = (s.layers||[]).find(l=>l.id===h.id);
       if(!target) return;
       BookWorkspace.sel = {kind:h.kind, id:h.id};
@@ -5308,7 +5426,7 @@ const BookWorkspace = {
       try{ c.setPointerCapture(e.pointerId); }catch(err){}
       c.style.cursor = 'grabbing';
       const want = h.kind==='text' ? 'text' : 'images';
-      if(BookWorkspace._rightTab!==want) BookWorkspace.setRightTab(want); else { if(want==='images') BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); }
+      if(BookWorkspace._rightTab!==want) BookWorkspace.setRightTab(want); else { if(want==='images') BookWorkspace.renderImagesPanel(); else BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); }
     });
     c.addEventListener('pointermove',e=>{
       const d = BookWorkspace._drag, q = pt(e);
@@ -5342,7 +5460,7 @@ const BookWorkspace = {
     cm.customFonts = (cm.customFonts||[]).filter(f=>f.name!==name); cm.customFonts.push({name, data:await CoverWorkspace._readFile(file)});
     await CoverWorkspace.ensureFonts(cm);
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
-    if(s){ s.textBox = BookWorkspace._textBox(s); s.textBox.font = name; s.textBox.styleId = ''; await DB.put('spreads',s); }
+    const fb = s && BookWorkspace._selBox(s); if(fb){ fb.font = name; fb.styleId = ''; await DB.put('spreads',s); }
     await DB.put('projects',p); BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); toast('Font "'+name+'" added — it is also available in the Cover workspace.');
   },
   /* ---- image / PNG layers on a spread ---- */
@@ -5390,12 +5508,16 @@ const BookWorkspace = {
     const wrap = document.getElementById('bkwsTextWrap'); if(!wrap) return;
     const p = currentProject(); const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
     if(!p || !s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list to add text to it.</div>'; return; }
-    const tb = BookWorkspace._textBox(s); const styles = p.typographyStyles||[];
+    const boxes = BookWorkspace._texts(s); const tb = BookWorkspace._selBox(s); const styles = p.typographyStyles||[];
     const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round(tb[key]*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setTextBox('${key}',this.value)"></div>`;
     const fonts = CoverWorkspace.FONTS.concat(((p.coverMeta||{}).customFonts||[]).map(f=>f.name));
     const sw = ['#ffffff','#000000','#f4ead6','#c9a15a','#e8453c','#2f6fdb','#2e9e5b','#f2c230'];
-    wrap.innerHTML = `
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Spread ${s.spreadIndex} text. Drag it on the canvas to move it.</div>
+    const list = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Spread ${s.spreadIndex} — ${boxes.length} text box${boxes.length===1?'':'es'}. Click one on the canvas or in this list; drag to move.</div>
+      ${boxes.map(b=>`<div class="bkws-page-tree-row ${tb&&tb.id===b.id?'active':''}" onclick="BookWorkspace.selectTextBox('${b.id}')"><span class="txt">${escapeHtml(((b.text||'').split('\n')[0])||'(empty)')}</span><span style="font-size:10px;color:var(--text-faint);">${b.side==='left'?'L':'R'}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();BookWorkspace.removeTextBox('${b.id}')">✕</button></div>`).join('')}
+      <button class="btn btn-sm btn-gold" style="margin:8px 0;" onclick="BookWorkspace.addTextBox()">+ Add text box</button>`;
+    if(!tb){ wrap.innerHTML = list + '<div class="help-block">No text on this spread yet. Add a text box, or send a paragraph from the manuscript.</div>'; return; }
+    wrap.innerHTML = list + `<hr style="border-color:var(--border-soft);margin:8px 0;">
       <div class="field"><label>Text</label><textarea rows="6" oninput="BookWorkspace.setSpreadText(this.value)" placeholder="Type, or send a paragraph from the manuscript">${escapeHtml(s.text||'')}</textarea></div>
       <div class="cvws-field-row"><div class="field"><label>Page</label><select onchange="BookWorkspace.setTextBox('side',this.value)"><option value="left" ${tb.side==='left'?'selected':''}>Left page</option><option value="right" ${tb.side!=='left'?'selected':''}>Right page</option></select></div>
         <div class="field"><label>Align</label><select onchange="BookWorkspace.setTextBox('align',this.value)">${['left','center','right'].map(a=>`<option ${tb.align===a?'selected':''}>${a}</option>`).join('')}</select></div></div>
@@ -5412,20 +5534,35 @@ const BookWorkspace = {
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.panel?'checked':''} onchange="BookWorkspace.setTextBox('panel',this.checked)"> Dark panel</label>
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.outline?'checked':''} onchange="BookWorkspace.setTextBox('outline',this.checked); BookWorkspace.renderTextPanel();"> Outline</label></div>
       ${tb.outline?`<div class="field"><label>Outline color</label><input type="color" value="${tb.outlineColor}" oninput="BookWorkspace.setTextBox('outlineColor',this.value)"></div>`:''}
-      <button class="btn btn-sm btn-danger" onclick="BookWorkspace.setSpreadText(''); BookWorkspace.renderTextPanel();">Clear text</button>`;
+      <button class="btn btn-sm btn-danger" onclick="BookWorkspace.removeTextBox('${tb.id}')">Delete this text box</button>`;
   },
+  _saveSpreadSoon(s){ clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300); },
   setSpreadText(v){
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
-    s.text = v; clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300);
+    const b = BookWorkspace._selBox(s); if(!b) return;
+    b.text = v; BookWorkspace._syncText(s); BookWorkspace._saveSpreadSoon(s);
     BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderChunks();
+    const row = document.querySelector('#bkwsTextWrap .bkws-page-tree-row.active .txt'); if(row) row.textContent = (v.split('\n')[0])||'(empty)';
   },
   setTextBox(key,val){
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+    const b = BookWorkspace._selBox(s); if(!b) return;
     if(['x','y','w','size','lh'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
-    s.textBox = BookWorkspace._textBox(s); s.textBox[key] = val;
-    clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300);
+    b[key] = val; BookWorkspace._saveSpreadSoon(s);
     BookWorkspace.drawCanvas();
     if(['styleId','side'].includes(key)) BookWorkspace.renderTextPanel();
+  },
+  addTextBox(){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s){ toast('Select a spread first.'); return; }
+    BookWorkspace._newBox(s,'New text'); DB.put('spreads',s);
+    BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks();
+  },
+  selectTextBox(id){ BookWorkspace.sel = {kind:'text', id}; BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); },
+  removeTextBox(id){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+    s.texts = BookWorkspace._texts(s).filter(t=>t.id!==id); BookWorkspace._syncText(s);
+    if(BookWorkspace.sel && BookWorkspace.sel.id===id) BookWorkspace.sel = null;
+    DB.put('spreads',s); BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip();
   },
 
   /* ---- Spread canvas with print guides ---- */
@@ -5454,6 +5591,7 @@ const BookWorkspace = {
     const bleed = 0.125; const spreadW = trimW*2, spreadH = trimH; const PPI = 90;
     canvas.width = Math.max(1, Math.round((spreadW+2*bleed)*PPI));
     canvas.height = Math.max(1, Math.round((spreadH+2*bleed)*PPI));
+    CanvasZoom.apply('book');
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,canvas.width,canvas.height);
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
@@ -5470,11 +5608,11 @@ const BookWorkspace = {
     const hits = [];
     if(s){
       BookWorkspace._paintLayers(ctx,s,limgs,PPI,trimW,trimH,bleed,hits);
-      const th = BookWorkspace._paintText(ctx,p,s,PPI,trimW,trimH,bleed,true);
-      if(th) hits.push(Object.assign({kind:'text', id:'text'}, th));
+      BookWorkspace._paintTexts(ctx,p,s,PPI,trimW,trimH,bleed,hits);
     }
     BookWorkspace._hits = hits;
-    const sel = BookWorkspace.sel && hits.find(h=>h.kind===BookWorkspace.sel.kind && h.id===BookWorkspace.sel.id);
+    const selRef = BookWorkspace.sel || ((BookWorkspace._rightTab==='text' && s && BookWorkspace._selBox(s)) ? {kind:'text', id:BookWorkspace._selBox(s).id} : null);
+    const sel = selRef && hits.find(h=>h.kind===selRef.kind && h.id===selRef.id);
     if(sel && (BookWorkspace._rightTab==='text' || BookWorkspace._rightTab==='images')){
       ctx.save(); ctx.strokeStyle='rgba(80,200,255,.9)'; ctx.setLineDash([5,3]); ctx.lineWidth=1.5; ctx.strokeRect(sel.x-4,sel.y-4,sel.w+8,sel.h+8); ctx.restore();
     }
@@ -5636,6 +5774,7 @@ const BookWorkspace = {
     if(spreads.length===0){ toast('Upload art or add text to at least one spread first.'); return; }
     BookWorkspace._dummySpreads = spreads; BookWorkspace.dummyIndex = 0;
     document.getElementById('bkwsDummyBackdrop').style.display = 'flex';
+    CanvasZoom.register('dummy',{el:'bkwsDummyImg', wrap:'bkwsDummyImgWrap', ctl:'bkwsDummyZoomCtl', events:['load']});
     BookWorkspace.renderDummyFrame();
   },
   closeDigitalDummy(){
@@ -5664,9 +5803,13 @@ const BookWorkspace = {
 /* ---------- Generic image Lightbox (single-image assets + board previews) ---------- */
 const Lightbox = {
   open(src, caption){
-    document.getElementById('boardLightboxImg').src = src;
+    const lbImg = document.getElementById('boardLightboxImg');
+    CanvasZoom.register('lightbox',{el:'boardLightboxImg', wrap:'boardLightboxWrap', ctl:'boardLbZoomCtl', events:['load']});
+    CanvasZoom.cfg.lightbox.mode = 'fit';
+    lbImg.src = src;
     document.getElementById('boardLightboxCaption').textContent = caption || '';
     document.getElementById('boardLightbox').classList.add('open');
+    CanvasZoom.apply('lightbox');
   },
   close(){
     document.getElementById('boardLightbox').classList.remove('open');
@@ -7372,6 +7515,7 @@ const Workspace2D = {
   MOUTH_SHAPES:['A','B','C','D','E','F','O','M'],
 
   render(){
+    CanvasZoom.register('ws2d',{el:'ws2dVideo', wrap:'ws2dStage', ctl:'ws2dZoomCtl', unlock:['ws2dVideoWrap'], events:['loadedmetadata','loadeddata']});
     const p = currentProject();
     const sel = document.getElementById('ws2dSourceSelect');
     const vids = p ? projAssets(p.id).filter(a=>a.type==='Reference Video' && a.videoData) : [];
