@@ -622,9 +622,12 @@ tr:hover .row-actions{opacity:1;}
 .ld-accordion .field{margin-bottom:8px;margin-top:8px;}
 
 /* ---------- Project calendar (deadline + days-worked heatmap) ---------- */
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-.cal-grid-head{margin-bottom:4px;font-size:10.5px;color:var(--text-faint);text-align:center;}
-.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11.5px;border-radius:6px;background:var(--bg-elevated);color:var(--text-muted);}
+.cal-wrap{max-width:236px;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.cal-grid-head{margin-bottom:2px;font-size:9.5px;color:var(--text-faint);text-align:center;}
+.cal-day{height:21px;display:flex;align-items:center;justify-content:center;font-size:10px;border-radius:4px;background:var(--bg-elevated);color:var(--text-muted);}
+.cal-pop{position:fixed;top:58px;right:14px;z-index:420;width:262px;background:var(--bg-panel);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 12px 36px rgba(0,0,0,.5);display:none;}
+.cal-pop.open{display:block;}
 .cal-day.cal-worked{background:var(--gold);color:#14171c;font-weight:600;}
 .cal-day.cal-today{box-shadow:0 0 0 2px var(--blue) inset;}
 .cal-day.cal-deadline{box-shadow:0 0 0 2px var(--danger-bright) inset;color:var(--danger-bright);font-weight:600;}
@@ -882,12 +885,14 @@ tr:hover .row-actions{opacity:1;}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn btn-sm" onclick="ProjectCalendar.togglePop()" title="Calendar — deadline and days worked">📅</button>
         <button class="btn btn-sm" onclick="Palette.open()" title="Search / jump to (Ctrl/Cmd+K)">🔍 Search <span class="search-shortcut-hint" style="opacity:.5;font-family:var(--font-mono);font-size:10px;">⌘K</span></button>
         <div class="timer-pill idle" id="timerPill" onclick="Router.go('focus')">
           <span class="rec"></span><span id="timerPillText">No active timer</span>
         </div>
       </div>
     </div>
+    <div class="cal-pop" id="calPop"></div>
     <div class="content" id="content">
 
       <!-- HOME -->
@@ -1198,8 +1203,9 @@ tr:hover .row-actions{opacity:1;}
             </div>
             <div class="bkws-center">
               <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Spread <span style="font-weight:400;font-size:11px;" id="bkwsDims"></span></span><span id="bkwsZoomCtl"></span></div>
+              <div id="bkwsLinkBanner" style="display:none;padding:6px 14px;background:rgba(80,200,255,.12);border-bottom:1px solid rgba(80,200,255,.5);font-size:12px;align-items:center;gap:10px;"></div>
               <div class="bkws-canvas-wrap" id="bkwsCanvasWrap"><canvas id="bkwsCanvas"></canvas></div>
-              <div class="bkws-upload-row"><label class="btn btn-sm">Upload spread art<input type="file" accept="image/*" style="display:none;" onchange="BookWorkspace.uploadSpreadArt(this.files[0])"></label></div>
+              <div class="bkws-upload-row" style="display:flex;gap:8px;align-items:center;"><label class="btn btn-sm">Upload spread art<input type="file" accept="image/*" style="display:none;" onchange="BookWorkspace.uploadSpreadArt(this.files[0]); this.value='';"></label><button class="btn btn-sm btn-danger" id="bkwsRemoveArt" onclick="BookWorkspace.removeSpreadArt()" title="Remove the art image from this spread (text, PNGs and page color stay)">Remove art</button></div>
             </div>
             <div class="bkws-right">
               <div class="tabs" style="margin:0 0 8px;flex-wrap:wrap;">
@@ -2592,18 +2598,25 @@ const Views = {
 /* ---------- Project calendar: deadline countdown, days-worked count, month heatmap ---------- */
 const ProjectCalendar = {
   viewYear: null, viewMonth: null,
+  togglePop(){
+    const pop = document.getElementById('calPop'); if(!pop) return;
+    if(!this._popWired){ this._popWired = true; document.addEventListener('click',e=>{ if(pop.classList.contains('open') && !pop.contains(e.target) && !(e.target.closest && e.target.closest('[onclick*="togglePop"]'))) pop.classList.remove('open'); }); }
+    const open = !pop.classList.contains('open'); pop.classList.toggle('open',open);
+    if(open){ const p = currentProject(); if(!p){ pop.innerHTML = '<div class="hint">Open a project to see its calendar.</div>'; } else this.render(p); }
+  },
   render(p){
     if(!p) return;
     if(this.viewYear==null){ const now=new Date(); this.viewYear=now.getFullYear(); this.viewMonth=now.getMonth(); }
-    const el = document.getElementById('dashCalendar');
-    if(!el) return;
+    ['dashCalendar','calPop'].forEach(id=>{ const t = document.getElementById(id); if(t && (id==='dashCalendar' || t.classList.contains('open'))) this._renderInto(p,t,id==='calPop'); });
+  },
+  _renderInto(p,el,mini){
     const logs = projTimelogs(p.id), journal = projJournal(p.id);
     const workedDays = new Set();
     logs.forEach(l=>{ if(l.start) workedDays.add(new Date(l.start).toISOString().slice(0,10)); });
     journal.forEach(j=>{ if(j.date) workedDays.add(j.date); });
     const todayStrVal = todayStr();
 
-    const upcoming = projTasks(p.id).filter(t=>t.dueDate && t.status!=='done').sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,5);
+    const upcoming = projTasks(p.id).filter(t=>t.dueDate && t.status!=='done').sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,mini?3:5);
 
     const first = new Date(this.viewYear, this.viewMonth, 1);
     const startDow = first.getDay();
@@ -2618,8 +2631,8 @@ const ProjectCalendar = {
       const isDeadline = dateStr===p.deadline;
       cells += `<div class="cal-day ${worked?'cal-worked':''} ${isToday?'cal-today':''} ${isDeadline?'cal-deadline':''}" title="${dateStr}${worked?' — worked':''}${isDeadline?' — deadline':''}">${d}</div>`;
     }
-    el.innerHTML = `
-      ${upcoming.length?`<div style="margin-bottom:10px;">
+    el.innerHTML = `<div class="cal-wrap">
+      ${upcoming.length?`<div style="margin-bottom:8px;">
         <div style="font-size:11.5px;color:var(--text-faint);text-transform:uppercase;margin-bottom:6px;">Upcoming Task Deadlines</div>
         ${upcoming.map(t=>{
           const diff = Math.round((new Date(t.dueDate+'T00:00:00') - new Date(todayStrVal+'T00:00:00')) / 86400000);
@@ -2637,7 +2650,7 @@ const ProjectCalendar = {
       </div>
       <div class="cal-grid cal-grid-head">${['S','M','T','W','T','F','S'].map(d=>`<div>${d}</div>`).join('')}</div>
       <div class="cal-grid">${cells}</div>
-      <div class="hint" style="margin-top:8px;">Gold = a day you logged time or wrote a journal entry. Red outline = the deadline (set the deadline at the top of this page).</div>
+      <div class="hint" style="margin-top:6px;font-size:10.5px;">Gold = time logged / journal entry. Red outline = deadline.</div></div>
     `;
   },
   shiftMonth(delta){
@@ -5345,7 +5358,7 @@ const BookWorkspace = {
 
   /* ---- Spread text: typeset on the canvas ---- */
   _fontFam(name){ return ['fantasy','cursive','serif','sans-serif','monospace'].includes(name) ? name : (/[,"]/.test(name) ? name : `"${name}"`); },
-  _boxDefaults(){ return {text:'', side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000', h:38, linkTo:null}; },
+  _boxDefaults(){ return {text:'', side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000', h:38, fixed:false, rot:0, shape:null, shapeFill:'', shapeStroke:'', shapeStrokeW:1.5, linkTo:null}; },
   _texts(s){
     if(!Array.isArray(s.texts)){
       s.texts = [];
@@ -5368,18 +5381,54 @@ const BookWorkspace = {
   },
   /* ---- Linked text boxes: text flows from one box into the next (same page, next page, next spread) ---- */
   _allBoxes(p){ const out=[]; projSpreads(p.id).forEach(sp=>BookWorkspace._texts(sp).forEach(b=>out.push({b,s:sp}))); return out; },
-  _wrapP(ctx,text,maxW){
-    const out = [];
-    String(text||'').split('\n').forEach(para=>{
-      if(!para.trim()){ out.push({t:'',hard:true}); return; }
-      let line = '';
-      para.trim().split(/\s+/).forEach(word=>{
-        const test = line ? line+' '+word : word;
-        if(line && ctx.measureText(test).width>maxW){ out.push({t:line,hard:false}); line = word; } else line = test;
-      });
-      out.push({t:line,hard:true});
-    });
+  /* ---- Custom shape frames (pen tool), line layout inside shapes ---- */
+  _shapeFlat(shape){
+    if(!shape || shape.length<3) return null;
+    const pts = [], n = shape.length;
+    for(let i=0;i<n;i++){
+      const a = shape[i], c = shape[(i+1)%n];
+      if(!(a.ox||a.oy||c.ix||c.iy)){ pts.push([a.x,a.y]); continue; }
+      const c1x=a.x+(a.ox||0), c1y=a.y+(a.oy||0), c2x=c.x+(c.ix||0), c2y=c.y+(c.iy||0);
+      for(let t=0;t<16;t++){ const u=t/16, v=1-u;
+        pts.push([v*v*v*a.x+3*v*v*u*c1x+3*v*u*u*c2x+u*u*u*c.x, v*v*v*a.y+3*v*v*u*c1y+3*v*u*u*c2y+u*u*u*c.y]); }
+    }
+    return pts;
+  },
+  _spansAt(poly,v){
+    const xs = [];
+    for(let i=0;i<poly.length;i++){ const a = poly[i], c = poly[(i+1)%poly.length];
+      if((a[1]<=v && c[1]>v) || (c[1]<=v && a[1]>v)) xs.push(a[0]+(v-a[1])/(c[1]-a[1])*(c[0]-a[0])); }
+    xs.sort((x,y)=>x-y); const out = [];
+    for(let i=0;i+1<xs.length;i+=2) out.push([xs[i],xs[i+1]]);
     return out;
+  },
+  _slotSpan(poly,k,lh,fh){      // usable horizontal range [u0,u1] (fractions of frame width) for text line slot k
+    const v0 = k*lh/fh, v1 = (k+1)*lh/fh; if(v1>1.0001) return null;
+    if(!poly) return [0,1];
+    const sc = BookWorkspace._spansAt(poly,(v0+v1)/2); if(!sc.length) return null;
+    let best = sc.reduce((m,x)=>((x[1]-x[0])>(m[1]-m[0])?x:m));
+    for(const v of [v0+(v1-v0)*.12, v1-(v1-v0)*.12]){
+      let ov = null; BookWorkspace._spansAt(poly,v).forEach(x=>{ const lo = Math.max(x[0],best[0]), hi = Math.min(x[1],best[1]); if(hi>lo && (!ov || hi-lo>ov[1]-ov[0])) ov = [lo,hi]; });
+      if(!ov) return null; best = ov;
+    }
+    return best;
+  },
+  _layout(ctx,text,o){          // fill a frame (rectangle or shape) line by line; returns the lines and any leftover text
+    const paras = String(text||'').split('\n').map(x=>x.trim().length ? x.trim().split(/\s+/) : []);
+    let pi = 0, wi = 0; const lines = [];
+    for(let k=0; k<o.maxSlots && pi<paras.length; k++){
+      const sp = BookWorkspace._slotSpan(o.poly,k,o.lh,o.fh); if(!sp) continue;
+      const W = (sp[1]-sp[0])*o.fw; if(W < o.px*1.2) continue;
+      const para = paras[pi];
+      if(!para.length){ if(lines.length) lines.push({t:'',u0:sp[0],u1:sp[1],k}); pi++; wi = 0; continue; }
+      let line = '';
+      while(wi<para.length){ const test = line ? line+' '+para[wi] : para[wi]; if(line && ctx.measureText(test).width>W) break; line = test; wi++; }
+      lines.push({t:line,u0:sp[0],u1:sp[1],k});
+      if(wi>=para.length){ pi++; wi = 0; }
+    }
+    let rest = '';
+    if(pi<paras.length){ rest = [paras[pi].slice(wi).join(' ')].concat(paras.slice(pi+1).map(x=>x.join(' '))).join('\n'); }
+    return {lines, rest, overflow: rest.trim().length>0};
   },
   _flow(p){
     const all = BookWorkspace._allBoxes(p), byId = new Map(all.map(o=>[o.b.id,o]));
@@ -5389,24 +5438,18 @@ const BookWorkspace = {
     const cv = BookWorkspace._flowCv || (BookWorkspace._flowCv = document.createElement('canvas')); const ctx = cv.getContext('2d');
     const hasNext = b=>b.linkTo && byId.has(b.linkTo) && b.linkTo!==b.id;
     all.forEach(o=>{
-      if(targeted.has(o.b.id) || !hasNext(o.b)) return;   // chain heads only
+      if(targeted.has(o.b.id) || !(hasNext(o.b) || o.b.fixed || o.b.shape)) return;   // chain heads: linked chains, fixed frames, shapes
       let cur = o, input = o.b.text||'', first = true; const seen = new Set();
       while(cur && !seen.has(cur.b.id)){
         seen.add(cur.b.id); const tb = cur.b;
         const st = tb.styleId ? (p.typographyStyles||[]).find(x=>x.id===tb.styleId) : null;
         const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font); const size = st ? (st.size||16) : tb.size;
-        const px = size*REF/72, lh = px*(tb.lh||1.4), maxW = (tb.w/100)*trimW*REF, hPx = ((tb.h||38)/100)*trimH*REF;
-        const maxLines = Math.max(1, Math.floor(hPx/lh));
+        const px = size*REF/72, lh = px*(tb.lh||1.4), fw = (tb.w/100)*trimW*REF, fh = ((tb.h||38)/100)*trimH*REF;
         ctx.font = `${px}px ${fam}, Georgia, serif`;
-        const L = BookWorkspace._wrapP(ctx,input,maxW);
+        const L = BookWorkspace._layout(ctx,input,{px,lh,fw,fh,poly:BookWorkspace._shapeFlat(tb.shape),maxSlots:Math.max(1,Math.floor(fh/lh))});
         const next = hasNext(tb) ? byId.get(tb.linkTo) : null;
-        const shown = L.slice(0,maxLines); let rest = L.slice(maxLines);
-        while(rest.length && !rest[0].t) rest.shift();
-        const info = {lines:shown.map(l=>l.t), input, hasNext:!!next, hasPrev:!first, overflow:false, maxLines};
-        if(!next) info.overflow = rest.length>0;
-        map.set(tb.id, info);
-        input = rest.map((l,i)=>l.t+(i<rest.length-1 ? (l.hard?'\n':' ') : '')).join('');
-        cur = next; first = false;
+        map.set(tb.id, {lines:L.lines, input, hasNext:!!next, hasPrev:!first, overflow:!next && L.overflow});
+        input = L.rest; cur = next; first = false;
       }
     });
     return map;
@@ -5418,54 +5461,309 @@ const BookWorkspace = {
       if(h && hits) hits.push(Object.assign({kind:'text', id:tb.id}, h));
     });
   },
+  _aabb(fr){
+    const c = Math.cos(fr.rot), s = Math.sin(fr.rot); let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([a,b])=>{ const lx=a*fr.w/2, ly=b*fr.h/2, gx=fr.cx+lx*c-ly*s, gy=fr.cy+lx*s+ly*c; x0=Math.min(x0,gx); y0=Math.min(y0,gy); x1=Math.max(x1,gx); y1=Math.max(y1,gy); });
+    return {x:x0,y:y0,w:x1-x0,h:y1-y0};
+  },
   _paintBox(ctx,p,tb,PPI,trimW,trimH,bleed,info,guide){
-    const txt = (tb.text||'').trim(); if(!txt && !info) return null;
+    const txt = (tb.text||'').trim();
+    const bp = bleed*PPI, pw = trimW*PPI, ph = trimH*PPI;
+    const px0 = bp + (tb.side==='left' ? 0 : pw), py0 = bp, rot = (tb.rot||0)*Math.PI/180;
+    const fw = (tb.w/100)*pw, cx = px0 + (tb.x/100)*pw, cy = py0 + (tb.y/100)*ph;
+    const mk = (fh)=>{ const frame = {cx,cy,w:fw,h:fh,rot}; return Object.assign({frame, ox:px0, oy:py0, px0, py0, pw, ph}, BookWorkspace._aabb(frame)); };
+    if(!txt && !info){
+      if(!guide) return null;   // empty boxes only show as a dashed placeholder while editing
+      const h0 = ((tb.fixed?(tb.h||38):12)/100)*ph;
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate(rot); ctx.setLineDash([4,3]); ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.strokeRect(-fw/2,-h0/2,fw,h0); ctx.restore();
+      return mk(h0);
+    }
     const st = tb.styleId ? (p.typographyStyles||[]).find(x=>x.id===tb.styleId) : null;
     const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font);
     const size = st ? (st.size||16) : tb.size, color = st ? (st.color||'#fff') : tb.color;
-    const bp = bleed*PPI, pw = trimW*PPI, ph = trimH*PPI;
-    const px0 = bp + (tb.side==='left' ? 0 : pw), py0 = bp;
-    const px = size*PPI/72, lh = px*(tb.lh||1.4), maxW = (tb.w/100)*pw;
+    const px = size*PPI/72, lh = px*(tb.lh||1.4);
     ctx.save();
+    ctx.translate(cx,cy); ctx.rotate(rot); ctx.translate(-cx,-cy);
     ctx.font = `${px}px ${fam}, Georgia, serif`;
-    const lines = info ? info.lines : CoverWorkspace._wrap(ctx,txt,maxW);
-    const blockH = info ? ((tb.h||38)/100)*ph : lines.length*lh;
-    const cx = px0 + (tb.x/100)*pw, cy = py0 + (tb.y/100)*ph;
-    const top = cy - blockH/2;
-    const textH = lines.length*lh;
-    const startY = info ? top : cy-blockH/2;
-    if(tb.panel && lines.length){
-      const pad = 0.12*PPI, r = 0.08*PPI, x = cx-maxW/2-pad, y = startY-pad, w = maxW+pad*2, h = (info?blockH:textH)+pad*2;
+    let lines, blockH;
+    if(info){ lines = info.lines; blockH = ((tb.h||38)/100)*ph; }
+    else { lines = CoverWorkspace._wrap(ctx,txt,fw).map((t,i)=>({t,u0:0,u1:1,k:i})); blockH = lines.length*lh; }
+    const top = cy - blockH/2, left = cx - fw/2;
+    // frame fill / outline (shapes and fixed frames)
+    if(info && (tb.shapeFill || tb.shapeStroke)){
+      const poly = BookWorkspace._shapeFlat(tb.shape);
+      ctx.beginPath();
+      if(poly) poly.forEach((q,i)=>{ const X = left+q[0]*fw, Y = top+q[1]*blockH; i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); }); else ctx.rect(left,top,fw,blockH);
+      ctx.closePath();
+      if(tb.shapeFill){ ctx.fillStyle = tb.shapeFill; ctx.fill(); }
+      if(tb.shapeStroke){ ctx.lineWidth = (tb.shapeStrokeW||1.5)*PPI/72; ctx.strokeStyle = tb.shapeStroke; ctx.lineJoin='round'; ctx.stroke(); }
+    }
+    if(tb.panel && !info && lines.length){
+      const pad = 0.12*PPI, r = 0.08*PPI, x = left-pad, y = top-pad, w = fw+pad*2, h = blockH+pad*2;
       ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill();
     }
-    ctx.textBaseline = 'middle'; ctx.textAlign = tb.align||'center';
-    const ax = cx + (tb.align==='left' ? -maxW/2 : tb.align==='right' ? maxW/2 : 0);
+    ctx.textBaseline = 'middle';
+    ctx.save();
     if(tb.shadow){ ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=px*.18; ctx.shadowOffsetX=px*.05; ctx.shadowOffsetY=px*.05; }
     ctx.fillStyle = color;
-    lines.forEach((ln,i)=>{ const yy = startY+lh*(i+.5); if(tb.outline){ ctx.lineJoin='round'; ctx.lineWidth=px*.14; ctx.strokeStyle=tb.outlineColor||'#000'; ctx.strokeText(ln,ax,yy); } ctx.fillText(ln,ax,yy); });
+    const al = tb.align||'center'; ctx.textAlign = al;
+    lines.forEach(L=>{
+      const x0 = left+L.u0*fw, x1 = left+L.u1*fw, ax = al==='left' ? x0 : al==='right' ? x1 : (x0+x1)/2, yy = top+lh*(L.k+.5);
+      if(tb.outline){ ctx.lineJoin='round'; ctx.lineWidth=px*.14; ctx.strokeStyle=tb.outlineColor||'#000'; ctx.strokeText(L.t,ax,yy); }
+      ctx.fillText(L.t,ax,yy);
+    });
     ctx.restore();
     if(guide && info){
       ctx.save(); ctx.setLineDash([4,3]); ctx.lineWidth=1; ctx.strokeStyle = info.overflow ? 'rgba(255,90,90,.95)' : 'rgba(80,200,255,.55)';
-      ctx.strokeRect(cx-maxW/2, top, maxW, blockH);
+      const poly = BookWorkspace._shapeFlat(tb.shape);
+      if(poly){ ctx.beginPath(); poly.forEach((q,i)=>{ const X = left+q[0]*fw, Y = top+q[1]*blockH; i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); }); ctx.closePath(); ctx.stroke(); }
+      else ctx.strokeRect(left, top, fw, blockH);
       ctx.setLineDash([]); ctx.font = '11px sans-serif'; ctx.textBaseline='top';
-      if(info.overflow){ ctx.fillStyle='rgba(255,90,90,.95)'; ctx.textAlign='right'; ctx.fillText('⚠ text overflows — link another box', cx+maxW/2, top+blockH+3); }
-      else if(info.hasNext){ ctx.fillStyle='rgba(80,200,255,.95)'; ctx.textAlign='right'; ctx.fillText('continues ➜', cx+maxW/2, top+blockH+3); }
-      if(info.hasPrev){ ctx.fillStyle='rgba(80,200,255,.95)'; ctx.textAlign='left'; ctx.fillText('➜ continued', cx-maxW/2, top-14); }
+      if(info.overflow){ ctx.fillStyle='rgba(255,90,90,.95)'; ctx.textAlign='right'; ctx.fillText('⚠ text overflows — link another box', left+fw, top+blockH+3); }
+      else if(info.hasNext){ ctx.fillStyle='rgba(80,200,255,.95)'; ctx.textAlign='right'; ctx.fillText('continues ➜', left+fw, top+blockH+3); }
+      if(info.hasPrev){ ctx.fillStyle='rgba(80,200,255,.95)'; ctx.textAlign='left'; ctx.fillText('➜ continued', left, top-14); }
       ctx.restore();
     }
-    return {x:cx-maxW/2, y:top, w:maxW, h:info?blockH:textH, px0, py0, pw, ph};
+    ctx.restore();
+    return mk(blockH);
   },
   /* ---- link management ---- */
+  /* ---- InDesign-style link tool ---- */
+  _linking:null,
+  startLink(id){
+    if(BookWorkspace._linking && BookWorkspace._linking.fromId===id){ BookWorkspace.cancelLink(); return; }
+    BookWorkspace._pen = null; BookWorkspace._linking = {fromId:id}; BookWorkspace._updateLinkBanner(); BookWorkspace.drawCanvas();
+  },
+  cancelLink(){ BookWorkspace._linking = null; BookWorkspace._updateLinkBanner(); BookWorkspace.drawCanvas(); const c = document.getElementById('bkwsCanvas'); if(c) c.style.cursor='default'; },
+  unlinkBox(id){ BookWorkspace.setLink('', id); BookWorkspace.cancelLink(); toast('Unlinked — the text that was flowing on stays in the next box.'); },
+  _updateLinkBanner(){
+    const el = document.getElementById('bkwsLinkBanner'); if(!el) return; const L = BookWorkspace._linking;
+    if(BookWorkspace._pen){ el.style.display='flex'; el.innerHTML = `<span>✒ <b>Pen tool:</b> click to place corner points · click-and-drag to pull a curve · click the green first point (or press Enter / double-click) to close the shape · Backspace removes the last point · Esc cancels.</span><span style="flex:1"></span><button class="btn btn-sm btn-gold" onclick="BookWorkspace.finishPen()">Close shape</button><button class="btn btn-sm" onclick="BookWorkspace.cancelPen()">Cancel</button>`; return; }
+    if(!L){ el.style.display='none'; el.innerHTML=''; return; }
+    const p = currentProject(); const o = p && BookWorkspace._allBoxes(p).find(x=>x.b.id===L.fromId);
+    el.style.display='flex';
+    el.innerHTML = `<span>🔗 <b>Link tool:</b> click the text box this text should flow into${o&&o.b.linkTo?' (it is currently linked — pick another to re-link)':''}, or click an empty spot on a page to create a new box there. You can switch spreads in the Pages list first.</span><span style="flex:1"></span>${o&&o.b.linkTo?`<button class="btn btn-sm" onclick="BookWorkspace.unlinkBox('${L.fromId}')">Unlink</button>`:''}<button class="btn btn-sm" onclick="BookWorkspace.cancelLink()">Cancel (Esc)</button>`;
+  },
+  _linkToNewBox(fromId,q){
+    const p = currentProject(); const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!p||!sp) return;
+    const from = BookWorkspace._allBoxes(p).find(o=>o.b.id===fromId); if(!from) return; const e = from.b;
+    const cm = p.coverMeta||{}; const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, PPI = 90, bp = 0.125*PPI;
+    const c = document.getElementById('bkwsCanvas'); const side = q.x < c.width/2 ? 'left':'right';
+    const px0 = bp + (side==='left'?0:trimW*PPI);
+    const x = Math.max(5,Math.min(95,(q.x-px0)/(trimW*PPI)*100)), y = Math.max(5,Math.min(95,(q.y-bp)/(trimH*PPI)*100));
+    const nb = Object.assign(BookWorkspace._boxDefaults(), {id:uid(), side, x, y, w:e.w, h:e.h||38, font:e.font, size:e.size, color:e.color, align:e.align, lh:e.lh, styleId:e.styleId, shadow:e.shadow, panel:e.panel, outline:e.outline, outlineColor:e.outlineColor, text:'', fixed:true});
+    BookWorkspace._texts(sp).push(nb); DB.put('spreads',sp);
+    BookWorkspace.setLink(nb.id, fromId); BookWorkspace.sel = {kind:'text', id:nb.id}; BookWorkspace.cancelLink(); BookWorkspace.renderTextPanel();
+  },
+  setFixed(v){
+    const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const tb = sp && BookWorkspace._selBox(sp); if(!tb) return;
+    tb.fixed = !!v; if(v){ const hh = (BookWorkspace._hits||[]).find(h=>h.kind==='text'&&h.id===tb.id); if(hh) tb.h = Math.max(5,Math.round(hh.frame.h/hh.ph*100)); }
+    BookWorkspace._saveSpreadSoon(sp); BookWorkspace._refreshAll();
+  },
+  removeSpreadArt(){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s){ toast('Select a spread first.'); return; }
+    if(!s.imageData){ toast('This spread has no art.'); return; }
+    if(!confirm(`Remove the art from spread ${s.spreadIndex}? Its text, PNG layers and page color stay.`)) return;
+    s.imageData = null; DB.put('spreads',s);
+    BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderRatio();
+    toast('Art removed.');
+  },
+  _G(fr,lx,ly){ const c = Math.cos(fr.rot), sn = Math.sin(fr.rot); return {x:fr.cx+lx*c-ly*sn, y:fr.cy+lx*sn+ly*c}; },
+  _psz(){ return Math.max(10,Math.min(60,13/(CanvasZoom.scale('book')||1))); },
+  _drawPorts(ctx,s,p,hits){
+    const fm = BookWorkspace._flow(p); const boxes = BookWorkspace._texts(s); const L = BookWorkspace._linking;
+    const ps = BookWorkspace._psz(), G = BookWorkspace._G, off = ps*.95;
+    const byId = {}; hits.filter(h=>h.kind==='text').forEach(h=>{ byId[h.id]=h; });
+    const selId = BookWorkspace.sel && BookWorkspace.sel.kind==='text' ? BookWorkspace.sel.id : null;
+    const outP = h=>G(h.frame,h.frame.w/2+off,h.frame.h/2+off), inP = h=>G(h.frame,-h.frame.w/2-off,-h.frame.h/2-off);
+    ctx.save(); ctx.lineWidth = Math.max(1.5,ps/8);
+    boxes.forEach(b=>{ if(b.linkTo && byId[b.id] && byId[b.linkTo]){
+      const a = outP(byId[b.id]), z = inP(byId[b.linkTo]);
+      ctx.strokeStyle='rgba(80,200,255,.9)'; ctx.setLineDash([ps*.5,ps*.35]); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(z.x,z.y); ctx.stroke(); ctx.setLineDash([]);
+      const ang = Math.atan2(z.y-a.y,z.x-a.x); ctx.fillStyle='rgba(80,200,255,.95)'; ctx.beginPath(); ctx.moveTo(z.x,z.y); ctx.lineTo(z.x-ps*.8*Math.cos(ang-.4),z.y-ps*.8*Math.sin(ang-.4)); ctx.lineTo(z.x-ps*.8*Math.cos(ang+.4),z.y-ps*.8*Math.sin(ang+.4)); ctx.closePath(); ctx.fill(); } });
+    const sq = (pt,fill,stroke,glyph,gc)=>{ ctx.fillStyle=fill; ctx.strokeStyle=stroke; ctx.fillRect(pt.x-ps/2,pt.y-ps/2,ps,ps); ctx.strokeRect(pt.x-ps/2,pt.y-ps/2,ps,ps);
+      if(glyph){ ctx.fillStyle=gc||'#000'; ctx.font = `bold ${ps*.8}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(glyph,pt.x,pt.y+ps*.04); } };
+    boxes.forEach(b=>{
+      const h = byId[b.id]; if(!h) return; const info = fm.get(b.id)||{};
+      const isSel = b.id===selId, isFrom = L && L.fromId===b.id;
+      if(L && !isFrom){ const pin = inP(h); sq(pin,'rgba(120,255,160,.95)','#0a6b2d','↳'); hits.push({kind:'port',which:'in',id:b.id,x:pin.x-ps,y:pin.y-ps,w:ps*2,h:ps*2,pw:h.pw,ph:h.ph}); }
+      if(isSel || isFrom || info.hasNext || info.overflow){
+        const po = outP(h), red = info.overflow, linked = info.hasNext;
+        sq(po, isFrom?'#ffd24a':(red?'#ff5a5a':(linked?'rgba(80,200,255,.95)':'#ffffff')), red?'#7a0000':'#06344a', red?'+':(linked?'▶':''), red?'#fff':'#06344a');
+        if(isSel||isFrom) hits.push({kind:'port',which:'out',id:b.id,x:po.x-ps,y:po.y-ps,w:ps*2,h:ps*2,pw:h.pw,ph:h.ph});
+      }
+      if(isSel && !L){
+        const pin = inP(h); sq(pin, info.hasPrev?'rgba(80,200,255,.95)':'#ffffff','#06344a', info.hasPrev?'◀':'');
+        hits.push({kind:'port',which:'in',id:b.id,x:pin.x-ps,y:pin.y-ps,w:ps*2,h:ps*2,pw:h.pw,ph:h.ph});
+      }
+    });
+    ctx.restore();
+  },
+  _HANDLES:[['nw',-1,-1],['n',0,-1],['ne',1,-1],['e',1,0],['se',1,1],['s',0,1],['sw',-1,1],['w',-1,0]],
+  _drawHandles(ctx,sel,hits){            // Illustrator/InDesign-style transform box: 8 resize handles + rotate handle
+    const fr = sel.frame, ps = BookWorkspace._psz(), G = BookWorkspace._G; if(!fr) return;
+    ctx.save(); ctx.lineWidth = Math.max(1.5,ps/8); ctx.strokeStyle='rgba(80,200,255,.95)'; ctx.setLineDash([]);
+    const cs = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>G(fr,a*fr.w/2,b*fr.h/2));
+    ctx.beginPath(); cs.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)); ctx.closePath(); ctx.stroke();
+    const topMid = G(fr,0,-fr.h/2), rotP = G(fr,0,-fr.h/2-ps*2.6);
+    ctx.beginPath(); ctx.moveTo(topMid.x,topMid.y); ctx.lineTo(rotP.x,rotP.y); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(rotP.x,rotP.y,ps*.5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    hits.push({kind:'handle',which:'rot',id:sel.id,itemKind:sel.kind,x:rotP.x-ps*.8,y:rotP.y-ps*.8,w:ps*1.6,h:ps*1.6,frame:fr,ox:sel.ox,oy:sel.oy,pw:sel.pw,ph:sel.ph});
+    BookWorkspace._HANDLES.forEach(([n,dx,dy])=>{
+      const q = G(fr,dx*fr.w/2,dy*fr.h/2); const hs = ps*.62;
+      ctx.fillStyle='#fff'; ctx.fillRect(q.x-hs/2,q.y-hs/2,hs,hs); ctx.strokeRect(q.x-hs/2,q.y-hs/2,hs,hs);
+      hits.push({kind:'handle',which:n,dx,dy,id:sel.id,itemKind:sel.kind,x:q.x-ps*.7,y:q.y-ps*.7,w:ps*1.4,h:ps*1.4,frame:fr,ox:sel.ox,oy:sel.oy,pw:sel.pw,ph:sel.ph});
+    });
+    ctx.restore();
+  },
+  _drawAnchors(ctx,sel,tb,hits){         // direct-selection: anchor points + bezier handles of a custom shape
+    const fr = sel.frame, ps = BookWorkspace._psz(); if(!fr || !tb.shape) return;
+    const P = (u,v)=>BookWorkspace._G(fr,(u-.5)*fr.w,(v-.5)*fr.h);
+    ctx.save(); ctx.lineWidth = Math.max(1.2,ps/9);
+    tb.shape.forEach((pt,i)=>{
+      const a = P(pt.x,pt.y); const parts = [];
+      if(pt.ix||pt.iy) parts.push(['in',P(pt.x+pt.ix,pt.y+pt.iy)]);
+      if(pt.ox||pt.oy) parts.push(['out',P(pt.x+pt.ox,pt.y+pt.oy)]);
+      parts.forEach(([n,q])=>{ ctx.strokeStyle='rgba(255,170,60,.9)'; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(q.x,q.y); ctx.stroke(); ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(q.x,q.y,ps*.28,0,Math.PI*2); ctx.fill();
+        hits.push({kind:'anchor',part:n,idx:i,id:tb.id,x:q.x-ps*.7,y:q.y-ps*.7,w:ps*1.4,h:ps*1.4,frame:fr}); });
+      ctx.fillStyle='#ff9d00'; ctx.strokeStyle='#5a3300'; ctx.fillRect(a.x-ps*.32,a.y-ps*.32,ps*.64,ps*.64); ctx.strokeRect(a.x-ps*.32,a.y-ps*.32,ps*.64,ps*.64);
+      hits.push({kind:'anchor',part:'pt',idx:i,id:tb.id,x:a.x-ps*.7,y:a.y-ps*.7,w:ps*1.4,h:ps*1.4,frame:fr});
+    });
+    ctx.restore();
+  },
+  _xfMove(d,q,e){
+    const f = d.fr0, c = Math.cos(f.rot), sn = Math.sin(f.rot), t = d.target, isText = d.h.itemKind==='text';
+    if(d.h.which==='rot'){
+      let deg = (Math.atan2(q.y-f.cy,q.x-f.cx)+Math.PI/2)*180/Math.PI; if(e && e.shiftKey) deg = Math.round(deg/15)*15;
+      deg = ((deg+180)%360+360)%360-180; t.rot = Math.round(deg*10)/10;
+    } else {
+      const dx = d.h.dx, dy = d.h.dy, rx = q.x-f.cx, ry = q.y-f.cy, lx = rx*c+ry*sn, ly = -rx*sn+ry*c, MIN = 18;
+      let nw = f.w, nh = f.h, ncx = 0, ncy = 0;
+      if(dx){ const ax = -dx*f.w/2; nw = Math.max(MIN,dx*(lx-ax)); ncx = ax+dx*nw/2; }
+      if(dy){ const ay = -dy*f.h/2; nh = Math.max(MIN,dy*(ly-ay)); ncy = ay+dy*nh/2; }
+      if(!isText && dx && dy){ const k = Math.max(nw/f.w, nh/f.h); nw = f.w*k; nh = f.h*k; ncx = -dx*f.w/2+dx*nw/2; ncy = -dy*f.h/2+dy*nh/2; }
+      if(e && e.shiftKey && isText && dx && dy){ const k = Math.max(nw/f.w, nh/f.h); nw = f.w*k; nh = f.h*k; ncx = -dx*f.w/2+dx*nw/2; ncy = -dy*f.h/2+dy*nh/2; }
+      const gx = f.cx+ncx*c-ncy*sn, gy = f.cy+ncx*sn+ncy*c;
+      if(isText){ t.w = Math.max(4,nw/d.h.pw*100); t.x = (gx-d.h.ox)/d.h.pw*100; t.y = (gy-d.h.oy)/d.h.ph*100; if(dy){ t.h = Math.max(4,nh/d.h.ph*100); t.fixed = true; } }
+      else { t.w = Math.max(1,nw/d.h.pw*100); t.x = (gx-d.h.ox)/d.h.pw*100; t.y = (gy-d.h.oy)/d.h.ph*100; t.sy = Math.max(.05, nh/(nw*f.asp)); }
+    }
+    ['x','y','w','h','rot','sy'].forEach(k=>{ const el = document.getElementById('bkwsTb_'+k); if(el && t[k]!=null) el.value = Math.round(t[k]*100)/100; });
+    BookWorkspace.drawCanvas();
+  },
+  _anchorMove(d,q,e){
+    const tb = d.target, f = d.fr0, c = Math.cos(f.rot), sn = Math.sin(f.rot), rx = q.x-f.cx, ry = q.y-f.cy;
+    const u = (rx*c+ry*sn)/f.w+.5, v = (-rx*sn+ry*c)/f.h+.5, pt = tb.shape[d.h.idx]; if(!pt) return;
+    if(d.h.part==='pt'){ pt.x = u; pt.y = v; }
+    else if(d.h.part==='out'){ pt.ox = u-pt.x; pt.oy = v-pt.y; if(!(e&&e.altKey)){ pt.ix = -pt.ox; pt.iy = -pt.oy; } }
+    else { pt.ix = u-pt.x; pt.iy = v-pt.y; if(!(e&&e.altKey)){ pt.ox = -pt.ix; pt.oy = -pt.iy; } }
+    BookWorkspace.drawCanvas();
+  },
+  /* ---- Pen tool: click = corner point, click-drag = smooth curve, click the first point / Enter = close ---- */
+  _pen:null,
+  startPen(forId){
+    BookWorkspace._linking = null;
+    BookWorkspace._pen = {pts:[], forId:forId||null, mouse:null, down:false};
+    BookWorkspace.sel = null; BookWorkspace._updateLinkBanner(); BookWorkspace.drawCanvas();
+    const c = document.getElementById('bkwsCanvas'); if(c) c.style.cursor = 'crosshair';
+    if(!BookWorkspace._penKeys){ BookWorkspace._penKeys = true; document.addEventListener('keydown',ev=>{
+      if(!BookWorkspace._pen) return; const t = ev.target && ev.target.tagName; if(t==='INPUT'||t==='TEXTAREA'||t==='SELECT') return;
+      if(ev.key==='Escape'){ BookWorkspace.cancelPen(); }
+      else if(ev.key==='Enter'){ ev.preventDefault(); BookWorkspace.finishPen(); }
+      else if(ev.key==='Backspace'||ev.key==='Delete'){ ev.preventDefault(); BookWorkspace._pen.pts.pop(); BookWorkspace.drawCanvas(); }
+    }); }
+  },
+  cancelPen(){ BookWorkspace._pen = null; BookWorkspace._updateLinkBanner(); BookWorkspace.drawCanvas(); const c = document.getElementById('bkwsCanvas'); if(c) c.style.cursor='default'; },
+  _penDown(q,e,c){
+    const P = BookWorkspace._pen, ps = BookWorkspace._psz();
+    if(P.pts.length>=3 && Math.hypot(q.x-P.pts[0].x,q.y-P.pts[0].y) < ps*1.1){ BookWorkspace.finishPen(); return; }
+    const pt = {x:q.x,y:q.y,ix:0,iy:0,ox:0,oy:0}; P.pts.push(pt); P.down = pt; P.start = q;
+    try{ c.setPointerCapture(e.pointerId); }catch(err){}
+    if(!P.wired){ P.wired = true; }
+    BookWorkspace._penBind(c); BookWorkspace.drawCanvas();
+  },
+  _penBind(c){
+    if(c._penBound) return; c._penBound = true;
+    c.addEventListener('pointermove',e=>{ const P = BookWorkspace._pen; if(!P) return; const r = c.getBoundingClientRect(); const q = {x:(e.clientX-r.left)*c.width/r.width, y:(e.clientY-r.top)*c.height/r.height};
+      P.mouse = q; if(P.down){ const dx = q.x-P.down.x, dy = q.y-P.down.y; if(Math.hypot(dx,dy)>4){ P.down.ox = dx; P.down.oy = dy; P.down.ix = -dx; P.down.iy = -dy; } else { P.down.ox=P.down.oy=P.down.ix=P.down.iy=0; } }
+      BookWorkspace.drawCanvas(); });
+    const up = ()=>{ const P = BookWorkspace._pen; if(P) P.down = null; };
+    c.addEventListener('pointerup',up); c.addEventListener('pointercancel',up);
+    c.addEventListener('dblclick',()=>{ const P = BookWorkspace._pen; if(P && P.pts.length>=4){ P.pts.pop(); BookWorkspace.finishPen(); } });
+  },
+  _penPath(ctx,pts,close){
+    ctx.beginPath(); pts.forEach((a,i)=>{ if(!i){ ctx.moveTo(a.x,a.y); return; } const b = pts[i-1]; ctx.bezierCurveTo(b.x+b.ox,b.y+b.oy,a.x+a.ix,a.y+a.iy,a.x,a.y); });
+    if(close && pts.length>2){ const a = pts[0], b = pts[pts.length-1]; ctx.bezierCurveTo(b.x+b.ox,b.y+b.oy,a.x+a.ix,a.y+a.iy,a.x,a.y); ctx.closePath(); }
+  },
+  _drawPen(ctx){
+    const P = BookWorkspace._pen; if(!P) return; const ps = BookWorkspace._psz();
+    ctx.save(); ctx.lineWidth = Math.max(2,ps/6); ctx.strokeStyle='#00d1ff'; ctx.fillStyle='rgba(0,209,255,.10)';
+    if(P.pts.length>1){ BookWorkspace._penPath(ctx,P.pts,false); ctx.stroke(); }
+    if(P.pts.length>=3){ BookWorkspace._penPath(ctx,P.pts,true); ctx.fill(); }
+    if(P.mouse && P.pts.length && !P.down){ const b = P.pts[P.pts.length-1]; ctx.setLineDash([ps*.4,ps*.3]); ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.bezierCurveTo(b.x+b.ox,b.y+b.oy,P.mouse.x,P.mouse.y,P.mouse.x,P.mouse.y); ctx.stroke(); ctx.setLineDash([]); }
+    P.pts.forEach((a,i)=>{
+      if(a.ox||a.oy){ ctx.strokeStyle='#ffb347'; ctx.lineWidth=Math.max(1.2,ps/9); [[a.ix,a.iy],[a.ox,a.oy]].forEach(([hx,hy])=>{ ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(a.x+hx,a.y+hy); ctx.stroke(); ctx.beginPath(); ctx.arc(a.x+hx,a.y+hy,ps*.25,0,Math.PI*2); ctx.fillStyle='#ffb347'; ctx.fill(); }); }
+      ctx.fillStyle = i===0 ? '#7CFF8A' : '#fff'; ctx.strokeStyle='#033'; ctx.lineWidth=Math.max(1.2,ps/9); ctx.fillRect(a.x-ps*.35,a.y-ps*.35,ps*.7,ps*.7); ctx.strokeRect(a.x-ps*.35,a.y-ps*.35,ps*.7,ps*.7);
+    });
+    ctx.restore();
+  },
+  finishPen(){
+    const P = BookWorkspace._pen; if(!P) return;
+    if(P.pts.length<3){ toast('A shape needs at least 3 points.'); return; }
+    const p = currentProject(); const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!p||!sp){ BookWorkspace.cancelPen(); return; }
+    // bounding box of the real curve
+    const cv = document.createElement('canvas').getContext('2d'); const poly = [];
+    const n = P.pts.length;
+    for(let i=0;i<n;i++){ const a = P.pts[i], b = P.pts[(i+1)%n]; for(let t=0;t<=20;t++){ const u=t/20, v=1-u; poly.push([v*v*v*a.x+3*v*v*u*(a.x+a.ox)+3*v*u*u*(b.x+b.ix)+u*u*u*b.x, v*v*v*a.y+3*v*v*u*(a.y+a.oy)+3*v*u*u*(b.y+b.iy)+u*u*u*b.y]); } }
+    const x0 = Math.min(...poly.map(q=>q[0])), x1 = Math.max(...poly.map(q=>q[0])), y0 = Math.min(...poly.map(q=>q[1])), y1 = Math.max(...poly.map(q=>q[1]));
+    const bw = Math.max(20,x1-x0), bh = Math.max(20,y1-y0);
+    const shape = P.pts.map(a=>({x:(a.x-x0)/bw,y:(a.y-y0)/bh,ix:a.ix/bw,iy:a.iy/bh,ox:a.ox/bw,oy:a.oy/bh}));
+    const cm = p.coverMeta||{}; const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, PPI = 90, bp = 0.125*PPI, pw = trimW*PPI, ph = trimH*PPI;
+    const ccx = (x0+x1)/2, ccy = (y0+y1)/2; const c = document.getElementById('bkwsCanvas');
+    const side = ccx < c.width/2 ? 'left' : 'right', px0 = bp + (side==='left'?0:pw);
+    const geo = {side, x:(ccx-px0)/pw*100, y:(ccy-bp)/ph*100, w:bw/pw*100, h:bh/ph*100, shape, fixed:true, rot:0};
+    let box = P.forId && BookWorkspace._texts(sp).find(t=>t.id===P.forId);
+    if(box){ Object.assign(box,geo); }
+    else {
+      const last = BookWorkspace._texts(sp).slice(-1)[0] || {};
+      box = Object.assign(BookWorkspace._boxDefaults(), {id:uid(), text:'Your text flows inside this custom shape. Select the shape and type or paste your own text in the Text tab.', color: last.color||'#000000', font:last.font||'Georgia', size:last.size||14, align:'center', shadow:false}, geo);
+      BookWorkspace._texts(sp).push(box);
+    }
+    BookWorkspace._persist([sp]); BookWorkspace._pen = null; BookWorkspace._updateLinkBanner();
+    BookWorkspace.sel = {kind:'text', id:box.id}; if(c) c.style.cursor='default';
+    BookWorkspace._refreshAll(); BookWorkspace.setRightTab('text');
+    toast('Shape frame created — text flows inside it. Drag the orange points to edit the curve.');
+  },
+  setShapePreset(name){
+    const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const tb = sp && BookWorkspace._selBox(sp); if(!tb) return;
+    const K = .27615, C = (x,y,ix,iy,ox,oy)=>({x,y,ix,iy,ox,oy});
+    const presets = {
+      ellipse:[C(.5,0,-K,0,K,0),C(1,.5,0,-K,0,K),C(.5,1,K,0,-K,0),C(0,.5,0,K,0,-K)],
+      diamond:[C(.5,0,0,0,0,0),C(1,.5,0,0,0,0),C(.5,1,0,0,0,0),C(0,.5,0,0,0,0)],
+      triangle:[C(.5,0,0,0,0,0),C(1,1,0,0,0,0),C(0,1,0,0,0,0)],
+      trapezoid:[C(.2,0,0,0,0,0),C(.8,0,0,0,0,0),C(1,1,0,0,0,0),C(0,1,0,0,0,0)],
+      bubble:[C(.5,0,-.3,0,.3,0),C(1,.42,0,-.3,0,.3),C(.62,.84,.1,-.05,0,0),C(.5,1,0,0,0,0),C(.4,.84,0,0,-.1,-.05),C(0,.42,0,.3,0,-.3)]
+    };
+    tb.shape = name==='rect' ? null : JSON.parse(JSON.stringify(presets[name])); if(tb.shape) tb.fixed = true;
+    BookWorkspace._persist([sp]); BookWorkspace._refreshAll();
+  },
+  setFrameStyle(key,val){
+    const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const tb = sp && BookWorkspace._selBox(sp); if(!tb) return;
+    tb[key] = val; if(key==='shapeStroke' && val && !tb.shapeStrokeW) tb.shapeStrokeW = 1.5;
+    if((key==='shapeFill'||key==='shapeStroke') && val && !tb.fixed && !tb.shape){ tb.fixed = true; const hh = (BookWorkspace._hits||[]).find(h=>h.kind==='text'&&h.id===tb.id); if(hh) tb.h = Math.max(5,Math.round(hh.frame.h/hh.ph*100)); }
+    BookWorkspace._saveSpreadSoon(sp); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight();
+  },
   _chainHead(p,id){
     const all = BookWorkspace._allBoxes(p); let cur = id, guard = 0;
     for(;;){ const prev = all.find(o=>o.b.linkTo===cur); if(!prev || guard++>500) return cur; cur = prev.b.id; }
   },
   _persist(spreads){ [...new Set(spreads)].forEach(sp=>{ BookWorkspace._syncText(sp); DB.put('spreads',sp); }); },
   _refreshAll(){ BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderPreflight(); },
-  setLink(targetId){
-    const p = currentProject(); const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!p||!sp) return;
-    const tb = BookWorkspace._selBox(sp); if(!tb) return;
+  setLink(targetId, fromId){
+    const p = currentProject(); let sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!p||!sp) return;
     const all = BookWorkspace._allBoxes(p), byId = new Map(all.map(o=>[o.b.id,o])), fm = BookWorkspace._flow(p);
+    let tb;
+    if(fromId){ const o = byId.get(fromId); if(!o) return; tb = o.b; sp = o.s; } else tb = BookWorkspace._selBox(sp);
+    if(!tb) return;
     const touched = [sp];
     // drop the old link: the old target keeps the text that was flowing into it
     if(tb.linkTo && byId.has(tb.linkTo)){ const old = byId.get(tb.linkTo); const inf = fm.get(old.b.id); old.b.text = inf ? inf.input : (old.b.text||''); touched.push(old.s); }
@@ -5477,7 +5775,9 @@ const BookWorkspace = {
       const headId = BookWorkspace._chainHead(p,tb.id); const head = byId.get(headId).b;
       if((t.b.text||'').trim()){ head.text = ((head.text||'').trim()+'\n\n'+t.b.text.trim()).trim(); toast('The target box already had text — it was added to the end of the flowing text.'); }
       t.b.text = '';
+      if(!tb.fixed && !fm.get(tb.id)){ const hh = (BookWorkspace._hits||[]).find(h=>h.kind==='text'&&h.id===tb.id); if(hh) tb.h = Math.max(5,Math.round(hh.frame.h/hh.ph*100)); }
       if(!tb.h) tb.h = 38; if(!t.b.h) t.b.h = 38;
+      tb.fixed = true; t.b.fixed = true;
       tb.linkTo = targetId; touched.push(t.s, byId.get(headId).s);
     }
     BookWorkspace._persist(touched); BookWorkspace._refreshAll();
@@ -5500,7 +5800,7 @@ const BookWorkspace = {
     }
     const nb = Object.assign(BookWorkspace._boxDefaults(), {id:uid(), side, x:end.x, y:end.y, w:end.w, h:end.h||38, font:end.font, size:end.size, color:end.color, align:end.align, lh:end.lh, styleId:end.styleId, shadow:end.shadow, panel:end.panel, outline:end.outline, outlineColor:end.outlineColor, text:''});
     BookWorkspace._texts(targetSp).push(nb);
-    if(!end.h) end.h = 38; end.linkTo = nb.id;
+    if(!end.h) end.h = 38; end.fixed = true; nb.fixed = true; end.linkTo = nb.id;
     BookWorkspace._persist([endSp,targetSp]);
     if(targetSp.id!==BookWorkspace.activeSpreadId){ BookWorkspace.activeSpreadId = targetSp.id; }
     BookWorkspace.sel = {kind:'text', id:nb.id};
@@ -5523,9 +5823,35 @@ const BookWorkspace = {
   wireCanvas(){
     const c = document.getElementById('bkwsCanvas'); if(!c || c._bkwsWired) return; c._bkwsWired = true;
     const pt = e=>{ const r=c.getBoundingClientRect(); return {x:(e.clientX-r.left)*c.width/r.width, y:(e.clientY-r.top)*c.height/r.height}; };
-    const hitAt = q=>[...(BookWorkspace._hits||[])].reverse().find(h=>q.x>=h.x && q.x<=h.x+h.w && q.y>=h.y && q.y<=h.y+h.h);
+    const hitAt = q=>[...(BookWorkspace._hits||[])].reverse().find(h=>{
+      if(!(q.x>=h.x && q.x<=h.x+h.w && q.y>=h.y && q.y<=h.y+h.h)) return false;
+      if((h.kind==='text'||h.kind==='layer') && h.frame && h.frame.rot){ const f = h.frame, cs = Math.cos(f.rot), sn = Math.sin(f.rot), dx = q.x-f.cx, dy = q.y-f.cy; const lx = dx*cs+dy*sn, ly = -dx*sn+dy*cs; return Math.abs(lx)<=f.w/2 && Math.abs(ly)<=f.h/2; }
+      return true; });
+    if(!BookWorkspace._escWired){ BookWorkspace._escWired = true; document.addEventListener('keydown',ev=>{ if(ev.key==='Escape' && BookWorkspace._linking) BookWorkspace.cancelLink(); }); }
     c.addEventListener('pointerdown',e=>{
       const q = pt(e), h = hitAt(q);
+      const L = BookWorkspace._linking;
+      if(BookWorkspace._pen){ BookWorkspace._penDown(q,e,c); return; }
+      if(L){
+        if(h && h.kind==='port' && h.which==='out' && h.id===L.fromId){ BookWorkspace.cancelLink(); return; }
+        if(h && h.kind==='layer') return;
+        if(h && (h.kind==='text' || (h.kind==='port' && h.which==='in'))){
+          if(h.id===L.fromId){ toast('Pick a different box to flow into.'); return; }
+          BookWorkspace.setLink(h.id, L.fromId); BookWorkspace.cancelLink(); return;
+        }
+        if(!h){ BookWorkspace._linkToNewBox(L.fromId,q); return; }
+        return;
+      }
+      if(h && h.kind==='port'){
+        if(h.which==='out'){ BookWorkspace.startLink(h.id); return; }
+        if(h.which==='in'){ BookWorkspace.selectTextBox(h.id); return; }
+      }
+      if(h && (h.kind==='handle' || h.kind==='anchor')){
+        const s0 = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s0) return;
+        const tg = h.kind==='anchor' || h.itemKind==='text' ? BookWorkspace._texts(s0).find(t=>t.id===h.id) : (s0.layers||[]).find(l=>l.id===h.id); if(!tg) return;
+        BookWorkspace._drag = {s:s0, h, target:tg, start:q, mode:h.kind==='anchor'?'anchor':'xf', fr0:Object.assign({},h.frame), shape0: h.kind==='anchor' ? JSON.parse(JSON.stringify(tg.shape)) : null};
+        try{ c.setPointerCapture(e.pointerId); }catch(err){} return;
+      }
       if(!h){ if(BookWorkspace.sel){ BookWorkspace.sel = null; BookWorkspace.drawCanvas(); } return; }
       const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
       let target;
@@ -5541,14 +5867,16 @@ const BookWorkspace = {
     });
     c.addEventListener('pointermove',e=>{
       const d = BookWorkspace._drag, q = pt(e);
-      if(!d){ c.style.cursor = hitAt(q) ? 'grab' : 'default'; return; }
+      if(!d){ const hh = hitAt(q); c.style.cursor = BookWorkspace._linking ? (hh && hh.kind==='layer' ? 'not-allowed' : (hh ? 'alias' : 'crosshair')) : (hh ? (hh.kind==='port' ? (hh.which==='size'?'ns-resize':'pointer') : 'grab') : 'default'); return; }
+      if(d.mode==='xf'){ BookWorkspace._xfMove(d,q,e); return; }
+      if(d.mode==='anchor'){ BookWorkspace._anchorMove(d,q,e); return; }
       d.target.x = Math.max(-10,Math.min(110, d.ox+(q.x-d.start.x)/d.h.pw*100));
       d.target.y = Math.max(-10,Math.min(110, d.oy+(q.y-d.start.y)/d.h.ph*100));
       const ix = document.getElementById('bkwsTb_x'), iy = document.getElementById('bkwsTb_y');
       if(ix) ix.value = d.target.x.toFixed(1); if(iy) iy.value = d.target.y.toFixed(1);
       BookWorkspace.drawCanvas();
     });
-    const end = ()=>{ const d = BookWorkspace._drag; if(!d) return; BookWorkspace._drag = null; c.style.cursor='default'; DB.put('spreads', d.s); };
+    const end = ()=>{ const d = BookWorkspace._drag; if(!d) return; BookWorkspace._drag = null; c.style.cursor='default'; DB.put('spreads', d.s); if(d.mode==='xf' || d.mode==='anchor'){ if(BookWorkspace.sel && BookWorkspace.sel.kind==='layer') BookWorkspace.renderImagesPanel(); else BookWorkspace.renderTextPanel(); BookWorkspace.renderPreflight(); } };
     c.addEventListener('pointerup',end); c.addEventListener('pointercancel',end);
   },
   async _layerImgs(s){
@@ -5560,9 +5888,9 @@ const BookWorkspace = {
     const bp = bleed*PPI, pw = trimW*2*PPI, ph = trimH*PPI;
     (s.layers||[]).forEach(l=>{
       const im = imgs[l.id]; if(!im) return;
-      const w = (l.w/100)*pw, h = w*im.height/im.width, cx = bp+(l.x/100)*pw, cy = bp+(l.y/100)*ph, a = (l.rot||0)*Math.PI/180;
+      const w = (l.w/100)*pw, h = w*im.height/im.width*(l.sy||1), cx = bp+(l.x/100)*pw, cy = bp+(l.y/100)*ph, a = (l.rot||0)*Math.PI/180;
       ctx.save(); ctx.globalAlpha = l.opacity==null?1:l.opacity; ctx.translate(cx,cy); ctx.rotate(a); if(l.flip) ctx.scale(-1,1); ctx.drawImage(im,-w/2,-h/2,w,h); ctx.restore();
-      if(hits){ const bw = Math.abs(w*Math.cos(a))+Math.abs(h*Math.sin(a)), bh = Math.abs(w*Math.sin(a))+Math.abs(h*Math.cos(a)); hits.push({kind:'layer', id:l.id, x:cx-bw/2, y:cy-bh/2, w:bw, h:bh, pw, ph}); }
+      if(hits){ const frame = {cx,cy,w,h,rot:a,asp:im.height/im.width}; hits.push(Object.assign({kind:'layer', id:l.id, frame, ox:bp, oy:bp, pw, ph}, BookWorkspace._aabb(frame))); }
     });
   },
   async uploadFont(file){
@@ -5580,7 +5908,7 @@ const BookWorkspace = {
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
     if(!s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list first.</div>'; return; }
     const layers = s.layers||[]; const sel = BookWorkspace.sel && BookWorkspace.sel.kind==='layer' ? layers.find(l=>l.id===BookWorkspace.sel.id) : null;
-    const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round((sel[key]==null?(key==='opacity'?1:0):sel[key])*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setLayer('${key}',this.value)"></div>`;
+    const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round((sel[key]==null?((key==='opacity'||key==='sy')?1:0):sel[key])*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setLayer('${key}',this.value)"></div>`;
     const bgSw = ['#ffffff','#f4ead6','#fbe9c6','#f6d6d6','#cfe6f5','#d6ecd2','#e8dff5','#f2c230','#e8453c','#2f6fdb','#2e9e5b','#1a1a1a'];
     const bgPrev = c=>`<span style="display:inline-block;width:34px;height:20px;border-radius:3px;border:1px solid var(--border);background:${c||'repeating-linear-gradient(45deg,#444 0 4px,#333 4px 8px)'};vertical-align:middle;"></span>`;
     wrap.innerHTML = `
@@ -5599,7 +5927,8 @@ const BookWorkspace = {
       ${sel ? `<div style="margin-top:10px;">
         <div class="cvws-field-row">${num('x','X %',-10,110,.5)}${num('y','Y %',-10,110,.5)}</div>
         <div class="cvws-field-row">${num('w','Width %',2,200,1)}${num('rot','Rotate °',-180,180,1)}</div>
-        ${num('opacity','Opacity (0–1)',0,1,.05)}
+        <div class="cvws-field-row">${num('opacity','Opacity (0–1)',0,1,.05)}${num('sy','Stretch Y (1 = normal)',.1,5,.05)}</div>
+        <button class="btn btn-sm" onclick="BookWorkspace.resetLayerTransform()">Reset rotation &amp; stretch</button>
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px;"><input type="checkbox" ${sel.flip?'checked':''} onchange="BookWorkspace.setLayer('flip',this.checked)"> Flip horizontally</label></div>` : ''}`;
   },
   async addLayer(file){
@@ -5608,6 +5937,7 @@ const BookWorkspace = {
     s.layers = (s.layers||[]).concat([l]); BookWorkspace.sel = {kind:'layer', id:l.id};
     await DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas();
   },
+  resetLayerTransform(){ const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const l = s && BookWorkspace.sel && (s.layers||[]).find(x=>x.id===BookWorkspace.sel.id); if(!l) return; l.rot = 0; l.sy = 1; DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); },
   selectLayer(id){ BookWorkspace.sel = {kind:'layer', id}; BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); },
   moveLayer(id,dir){
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return; const a = s.layers||[]; const i = a.findIndex(l=>l.id===id), j = i+dir;
@@ -5621,7 +5951,7 @@ const BookWorkspace = {
   setLayer(key,val){
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s || !BookWorkspace.sel) return;
     const l = (s.layers||[]).find(x=>x.id===BookWorkspace.sel.id); if(!l) return;
-    if(['x','y','w','rot','opacity'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
+    if(['x','y','w','rot','opacity','sy'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
     l[key] = val; clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300); BookWorkspace.drawCanvas();
   },
   renderTextPanel(){
@@ -5641,8 +5971,8 @@ const BookWorkspace = {
     const sw = ['#ffffff','#000000','#f4ead6','#c9a15a','#e8453c','#2f6fdb','#2e9e5b','#f2c230'];
     const list = `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Spread ${s.spreadIndex} — ${boxes.length} text box${boxes.length===1?'':'es'}. Click one on the canvas or in this list; drag to move.</div>
-      ${boxes.map(b=>`<div class="bkws-page-tree-row ${tb&&tb.id===b.id?'active':''}" onclick="BookWorkspace.selectTextBox('${b.id}')"><span class="txt">${escapeHtml(((b.text||'').split('\n')[0])||((flowMap.get(b.id)&&flowMap.get(b.id).lines[0])||'(empty)'))}</span><span style="font-size:10px;color:var(--text-faint);">${(flowMap.get(b.id)&&(flowMap.get(b.id).hasPrev||flowMap.get(b.id).hasNext))?'🔗 ':''}${b.side==='left'?'L':'R'}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();BookWorkspace.removeTextBox('${b.id}')">✕</button></div>`).join('')}
-      <button class="btn btn-sm btn-gold" style="margin:8px 0;" onclick="BookWorkspace.addTextBox()">+ Add text box</button>`;
+      ${boxes.map(b=>`<div class="bkws-page-tree-row ${tb&&tb.id===b.id?'active':''}" onclick="BookWorkspace.selectTextBox('${b.id}')"><span class="txt">${escapeHtml(((b.text||'').split('\n')[0])||((flowMap.get(b.id)&&flowMap.get(b.id).lines[0]&&flowMap.get(b.id).lines[0].t)||'(empty)'))}</span><span style="font-size:10px;color:var(--text-faint);">${(flowMap.get(b.id)&&(flowMap.get(b.id).hasPrev||flowMap.get(b.id).hasNext))?'🔗 ':''}${b.side==='left'?'L':'R'}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();BookWorkspace.removeTextBox('${b.id}')">✕</button></div>`).join('')}
+      <button class="btn btn-sm btn-gold" style="margin:8px 4px 8px 0;" onclick="BookWorkspace.addTextBox()">+ Add text box</button><button class="btn btn-sm btn-gold" style="margin:8px 0;" onclick="BookWorkspace.startPen('')">✒ Draw shape frame (pen)</button>`;
     if(!tb){ wrap.innerHTML = list + '<div class="help-block">No text on this spread yet. Add a text box, or send a paragraph from the manuscript.</div>'; return; }
     wrap.innerHTML = list + `<hr style="border-color:var(--border-soft);margin:8px 0;">
       ${finfo && finfo.hasPrev ? `<div class="help-block" style="margin-bottom:8px;">This box receives overflow text from the previous box, so it has no text of its own. Edit the text in the first box of the chain.</div>` : `<div class="field"><label>Text${finfo&&finfo.hasNext?' (flows through the linked boxes)':''}</label><textarea rows="6" oninput="BookWorkspace.setSpreadText(this.value)" placeholder="Type, or send a paragraph from the manuscript">${escapeHtml(tb.text||'')}</textarea></div>`}
@@ -5650,6 +5980,8 @@ const BookWorkspace = {
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">When the text doesn't fit this box's height it continues in the box you link to — even on another page or spread.</div>
       <div class="field"><label>Overflow flows into</label><select onchange="BookWorkspace.setLink(this.value)"><option value="">— not linked —</option>${linkOpts}</select></div>
       <div class="cvws-field-row">${num('h','Box height %',5,100,1)}<div class="field"><label>&nbsp;</label><button class="btn btn-sm btn-gold" onclick="BookWorkspace.newLinkedBox()" title="Creates the next box on the facing/next page and links it">+ New linked box on next page</button></div></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;"><input type="checkbox" ${(tb.fixed||tb.linkTo||(finfo&&finfo.hasPrev))?'checked':''} ${(tb.linkTo||(finfo&&finfo.hasPrev))?'disabled':''} onchange="BookWorkspace.setFixed(this.checked)"> Fixed-size frame (drag its bottom handle to resize)</label>
+      <div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;">Tip: select a box on the canvas and click the small square at its bottom-right corner (the out-port) — then click the box this text should flow into.</div>
       ${finfo ? (finfo.overflow ? '<div style="color:#ff6b6b;font-size:12px;margin-bottom:6px;">⚠ The text still overflows the last box. Link another box or enlarge a box height.</div>' : '<div style="color:var(--good);font-size:12px;margin-bottom:6px;">✓ Text fits in the linked chain.</div>') : '<div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;">Not linked — the box grows with its text.</div>'}
       <hr style="border-color:var(--border-soft);margin:8px 0;">
       <div class="cvws-field-row"><div class="field"><label>Page</label><select onchange="BookWorkspace.setTextBox('side',this.value)"><option value="left" ${tb.side==='left'?'selected':''}>Left page</option><option value="right" ${tb.side!=='left'?'selected':''}>Right page</option></select></div>
@@ -5661,7 +5993,15 @@ const BookWorkspace = {
       <div class="cvws-field-row">${num('size','Size (pt)',6,120,1)}<div class="field"><label>Color</label><input type="color" value="${tb.color}" oninput="BookWorkspace.setTextBox('color',this.value)" onchange="BookWorkspace.renderTextPanel()"></div></div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">${sw.map(c=>`<button title="${c}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${tb.color.toLowerCase()===c?'var(--gold-bright)':'var(--border)'};background:${c};cursor:pointer;padding:0;" onclick="BookWorkspace.setTextBox('color','${c}'); BookWorkspace.renderTextPanel();"></button>`).join('')}</div>`}
       <div class="cvws-field-row">${num('x','X %',-10,110,.5)}${num('y','Y %',-10,110,.5)}</div>
-      <div class="cvws-field-row">${num('w','Width %',10,100,1)}${num('lh','Line height',.8,3,.05)}</div>
+      <div class="cvws-field-row">${num('w','Width %',4,100,1)}${num('lh','Line height',.8,3,.05)}</div>
+      <div class="cvws-field-row">${num('rot','Rotate °',-180,180,1)}<div class="field"><label>&nbsp;</label><button class="btn btn-sm" onclick="BookWorkspace.setTextBox('rot',0); BookWorkspace.renderTextPanel();">Reset rotation</button></div></div>
+      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Frame shape</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Make the text frame any shape — text flows inside it. Draw your own with the pen, or start from a preset.</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;"><button class="btn btn-sm btn-gold" onclick="BookWorkspace.startPen('${tb.id}')">✒ Draw shape (pen)</button>
+        ${[['rect','▭ Rectangle'],['ellipse','◯ Ellipse'],['diamond','◇ Diamond'],['triangle','△ Triangle'],['trapezoid','⏢ Trapezoid'],['bubble','💬 Bubble']].map(([k,l])=>`<button class="btn btn-sm" onclick="BookWorkspace.setShapePreset('${k}')">${l}</button>`).join('')}</div>
+      <div class="cvws-field-row"><div class="field"><label>Frame fill</label><div style="display:flex;gap:4px;"><input type="color" value="${tb.shapeFill||'#ffffff'}" onchange="BookWorkspace.setFrameStyle('shapeFill',this.value); BookWorkspace.renderTextPanel();"><button class="btn btn-sm" onclick="BookWorkspace.setFrameStyle('shapeFill',''); BookWorkspace.renderTextPanel();">None</button></div></div>
+        <div class="field"><label>Frame outline</label><div style="display:flex;gap:4px;"><input type="color" value="${tb.shapeStroke||'#000000'}" onchange="BookWorkspace.setFrameStyle('shapeStroke',this.value); BookWorkspace.renderTextPanel();"><button class="btn btn-sm" onclick="BookWorkspace.setFrameStyle('shapeStroke',''); BookWorkspace.renderTextPanel();">None</button></div></div></div>
+      ${tb.shapeStroke?`<div class="field"><label>Outline width (pt)</label><input type="number" min=".25" max="20" step=".25" value="${tb.shapeStrokeW||1.5}" oninput="BookWorkspace.setFrameStyle('shapeStrokeW',parseFloat(this.value)||1.5)"></div>`:''}
       <div style="display:flex;gap:12px;margin:6px 0;">
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.shadow?'checked':''} onchange="BookWorkspace.setTextBox('shadow',this.checked)"> Shadow</label>
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.panel?'checked':''} onchange="BookWorkspace.setTextBox('panel',this.checked)"> Dark panel</label>
@@ -5680,7 +6020,7 @@ const BookWorkspace = {
   setTextBox(key,val){
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
     const b = BookWorkspace._selBox(s); if(!b) return;
-    if(['x','y','w','size','lh'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
+    if(['x','y','w','h','size','lh','rot'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
     b[key] = val; BookWorkspace._saveSpreadSoon(s);
     BookWorkspace.drawCanvas();
     if(['styleId','side'].includes(key)) BookWorkspace.renderTextPanel();
@@ -5771,9 +6111,13 @@ const BookWorkspace = {
     BookWorkspace._hits = hits;
     const selRef = BookWorkspace.sel || ((BookWorkspace._rightTab==='text' && s && BookWorkspace._selBox(s)) ? {kind:'text', id:BookWorkspace._selBox(s).id} : null);
     const sel = selRef && hits.find(h=>h.kind===selRef.kind && h.id===selRef.id);
-    if(sel && (BookWorkspace._rightTab==='text' || BookWorkspace._rightTab==='images')){
-      ctx.save(); ctx.strokeStyle='rgba(80,200,255,.9)'; ctx.setLineDash([5,3]); ctx.lineWidth=1.5; ctx.strokeRect(sel.x-4,sel.y-4,sel.w+8,sel.h+8); ctx.restore();
+    if(s && !BookWorkspace._pen) BookWorkspace._drawPorts(ctx,s,p,hits);
+    if(sel && !BookWorkspace._linking && !BookWorkspace._pen){
+      BookWorkspace._drawHandles(ctx,sel,hits);
+      if(sel.kind==='text'){ const tbx = BookWorkspace._texts(s).find(t=>t.id===sel.id); if(tbx && tbx.shape) BookWorkspace._drawAnchors(ctx,sel,tbx,hits); }
     }
+    if(BookWorkspace._pen) BookWorkspace._drawPen(ctx);
+    const rmBtn = document.getElementById('bkwsRemoveArt'); if(rmBtn) rmBtn.style.display = (s && s.imageData) ? '' : 'none';
     if(guides.bleed!==false){
       ctx.save(); ctx.strokeStyle='rgba(255,80,80,.85)'; ctx.setLineDash([6,5]); ctx.lineWidth=1.5;
       ctx.strokeRect(1,1,canvas.width-2,canvas.height-2); ctx.restore();
