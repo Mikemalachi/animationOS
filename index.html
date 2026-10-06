@@ -1243,7 +1243,7 @@ tr:hover .row-actions{opacity:1;}
               <div id="cvwsJacketWrap" class="cvws-scroll"></div>
             </div>
             <div class="cvws-center">
-              <div class="ws2d-panel-head">Flat Cover <span style="font-weight:400;font-size:11px;" id="cvwsDims"></span></div>
+              <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Flat Cover <span style="font-weight:400;font-size:11px;" id="cvwsDims"></span></span><button class="btn btn-sm btn-gold" onclick="CoverWorkspace.exportSeparatedPlates()">⬇ Export Print PDF</button></div>
               <div class="cvws-canvas-wrap"><canvas id="cvwsCanvas"></canvas></div>
             </div>
             <div class="cvws-right">
@@ -5031,7 +5031,7 @@ const CoverWorkspace = {
         <div class="field"><label>ISBN (12 or 13 digit)</label><input type="text" id="cvwsIsbn" value="${escapeHtml(cm.isbn||'')}" placeholder="978030..." onchange="CoverWorkspace.saveIsbn()"></div>
         <div id="cvwsBarcodeStatus" style="font-size:11px;color:var(--text-muted);margin-bottom:6px;"></div>
         <canvas id="cvwsBarcodePreview" style="background:#fff;border-radius:4px;"></canvas><br>
-        <button class="btn btn-sm btn-gold" style="margin-top:8px;width:100%;" onclick="CoverWorkspace.exportSeparatedPlates()">⬇ Export Separated Plates (PDF)</button>
+        <button class="btn btn-sm btn-gold" style="margin-top:8px;width:100%;" onclick="CoverWorkspace.exportSeparatedPlates()">⬇ Export Print PDF (cover + masks + spec)</button>
       </div>`;
     CoverWorkspace.renderRetailGrid();
     CoverWorkspace.renderBarcodePreview();
