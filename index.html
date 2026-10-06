@@ -885,6 +885,8 @@ tr:hover .row-actions{opacity:1;}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn btn-sm" id="undoBtn" data-undo onclick="Undo.step(-1)" title="Undo (Ctrl/Cmd+Z)" disabled>↶ Undo</button>
+        <button class="btn btn-sm" id="redoBtn" data-redo onclick="Undo.step(1)" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ Redo</button>
         <button class="btn btn-sm" onclick="ProjectCalendar.togglePop()" title="Calendar — deadline and days worked">📅</button>
         <button class="btn btn-sm" onclick="Palette.open()" title="Search / jump to (Ctrl/Cmd+K)">🔍 Search <span class="search-shortcut-hint" style="opacity:.5;font-family:var(--font-mono);font-size:10px;">⌘K</span></button>
         <div class="timer-pill idle" id="timerPill" onclick="Router.go('focus')">
@@ -1181,6 +1183,7 @@ tr:hover .row-actions{opacity:1;}
       <div class="view" id="view-bookws">
         <div class="bkws-root" id="bkwsRoot">
           <div class="bkws-toolbar">
+            <div class="ws2d-tool-group" style="gap:6px;"><button class="btn btn-sm" id="hisUndo_book" onclick="History.undo('book')" disabled>↶ Undo</button><button class="btn btn-sm" id="hisRedo_book" onclick="History.redo('book')" disabled>↷ Redo</button></div>
             <div class="ws2d-tool-group"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);"><input type="checkbox" id="bkwsGBleed" style="width:auto;" onchange="BookWorkspace.toggleGuide('bleed',this.checked)"> Bleed</label></div>
             <div class="ws2d-tool-group"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);"><input type="checkbox" id="bkwsGTrim" style="width:auto;" onchange="BookWorkspace.toggleGuide('trim',this.checked)"> Trim</label></div>
             <div class="ws2d-tool-group"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);"><input type="checkbox" id="bkwsGSafety" style="width:auto;" onchange="BookWorkspace.toggleGuide('safety',this.checked)"> Safety Margin</label></div>
@@ -1254,7 +1257,7 @@ tr:hover .row-actions{opacity:1;}
               <div id="cvwsJacketWrap" class="cvws-scroll"></div>
             </div>
             <div class="cvws-center">
-              <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Flat Cover <span style="font-weight:400;font-size:11px;" id="cvwsDims"></span></span><span id="cvwsZoomCtl" style="margin-left:auto;"></span><button class="btn btn-sm btn-gold" onclick="CoverWorkspace.exportFullPdf()" title="One clean page: art, text, PNGs, author photo and ISBN barcode">⬇ Export Full PDF</button></div>
+              <div class="ws2d-panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Flat Cover <span style="font-weight:400;font-size:11px;" id="cvwsDims"></span></span><span style="margin-left:auto;display:flex;gap:6px;"><button class="btn btn-sm" id="hisUndo_cover" onclick="History.undo('cover')" disabled>↶ Undo</button><button class="btn btn-sm" id="hisRedo_cover" onclick="History.redo('cover')" disabled>↷ Redo</button></span><span id="cvwsZoomCtl"></span><button class="btn btn-sm btn-gold" onclick="CoverWorkspace.exportFullPdf()" title="One clean page: art, text, PNGs, author photo and ISBN barcode">⬇ Export Full PDF</button></div>
               <div class="cvws-canvas-wrap" id="cvwsCanvasWrap"><canvas id="cvwsCanvas"></canvas></div>
             </div>
             <div class="cvws-right">
@@ -1567,6 +1570,7 @@ tr:hover .row-actions{opacity:1;}
 <div class="board-overlay" id="boardOverlay">
   <div class="board-toolbar">
     <div class="board-title" id="boardTitle">Reference Board</div>
+    <button class="btn btn-sm" data-undo onclick="Undo.step(-1)" title="Undo (Ctrl/Cmd+Z)" disabled>↶ Undo</button><button class="btn btn-sm" data-redo onclick="Undo.step(1)" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ Redo</button>
     <button class="btn btn-sm tool-btn active" data-tool="select" onclick="Board.setTool('select')">Select</button>
     <button class="btn btn-sm tool-btn" data-tool="freehand" onclick="Board.setTool('freehand')">✏ Pen</button>
     <button class="btn btn-sm tool-btn" data-tool="line" onclick="Board.setTool('line')">╱ Line</button>
@@ -1617,6 +1621,7 @@ tr:hover .row-actions{opacity:1;}
       </div>
     </div>
     <div class="vs-topbar-right">
+      <button class="btn btn-sm" data-undo onclick="Undo.step(-1)" title="Undo notes / edits (Ctrl/Cmd+Z)" disabled>↶</button><button class="btn btn-sm" data-redo onclick="Undo.step(1)" title="Redo" disabled>↷</button>
       <button class="vs-icon-btn" title="Fullscreen" onclick="VideoStudio.toggleFullscreen()">⛶</button>
       <div class="vs-avatar" title="Milkyas">M</div>
       <button class="btn btn-sm" onclick="VideoStudio.close()">✕ Close</button>
@@ -2211,6 +2216,7 @@ async function loadAll(){
   const metaBackup = await DB.get('meta','lastBackupAt');
   State.lastBackupAt = metaBackup ? metaBackup.value : null;
   applyAccentColor(State.accentColor);
+  if(typeof Undo!=='undefined') Undo.prime();
 }
 function applyAccentColor(hex){
   document.documentElement.style.setProperty('--gold', hex);
@@ -4353,6 +4359,161 @@ const CoverLab = {
 
 /* ---------- Book Cover Workspace ---------- */
 /* ---------- Generic zoom / fit-to-view for every viewer ---------- */
+/* ---------- Undo / Redo for the Illustrated Book and Cover workspaces ---------- */
+const History = {
+  MAX:80, ws:{},
+  _share(v){ if(Array.isArray(v)) return v.map(History._share); if(v && typeof v==='object'){ const o = {}; for(const k in v) o[k] = History._share(v[k]); return o; } return v; },   // deep copy; big image strings are shared, not duplicated
+  _sig(v){ return JSON.stringify(v,(k,x)=> k==='asp' ? undefined : (Array.isArray(x)&&!x.length) ? undefined : (typeof x==='string' && x.length>120) ? x.length+':'+x.slice(0,40)+x.slice(-40) : x); },
+  def:{
+    book:{ view:'view-bookws',
+      get(){ const p = currentProject(); return p ? {pid:p.id, spreads:projSpreads(p.id).map(sp=>History._share(sp))} : null; },
+      apply(snap){
+        snap.spreads.forEach(ss=>{ const st = State.spreads.find(x=>x.id===ss.id); if(!st) return; Object.keys(st).forEach(k=>{ delete st[k]; }); Object.assign(st,History._share(ss)); DB.put('spreads',st); });
+        const B = BookWorkspace; B.sel = null; B._anchorSel = null; B._pen = null; B._linking = null; B._updateLinkBanner();
+        B.renderPageTree(); B.renderImagesPanel(); B._refreshAll(); B.renderPreflight();
+      } },
+    cover:{ view:'view-coverws',
+      get(){ const p = currentProject(); return p ? {pid:p.id, coverMeta:History._share(p.coverMeta||{})} : null; },
+      apply(snap){ const p = currentProject(); if(!p) return; p.coverMeta = History._share(snap.coverMeta); DB.put('projects',p); CoverWorkspace._histBusy = true; try{ CoverWorkspace.render(); }finally{ CoverWorkspace._histBusy = false; } CoverWorkspace.drawCanvas(); CoverWorkspace.scheduleMockUpdate(0); }
+    }
+  },
+  _st(key){ return History.ws[key] || (History.ws[key] = {undo:[],redo:[],last:null,sig:'',pid:null,timer:null}); },
+  enter(key){            // called when a workspace opens: whatever exists now is the baseline
+    const st = History._st(key), snap = History.def[key].get(); if(!snap) return;
+    if(st.pid!==snap.pid){ st.undo = []; st.redo = []; st.pid = snap.pid; }
+    st.last = snap; st.sig = History._sig(snap); History.update();
+  },
+  touch(key){
+    const act = document.querySelector('.view.active'); if(!act || act.id!==History.def[key].view) return;
+    const st = History._st(key); clearTimeout(st.timer); st.timer = setTimeout(()=>History.commit(key),350);
+  },
+  commit(key){
+    const st = History._st(key); clearTimeout(st.timer); const snap = History.def[key].get(); if(!snap) return;
+    if(!st.last || st.pid!==snap.pid){ st.undo = []; st.redo = []; st.pid = snap.pid; st.last = snap; st.sig = History._sig(snap); History.update(); return; }
+    const sg = History._sig(snap); if(sg===st.sig) return;
+    st.undo.push(st.last); if(st.undo.length>History.MAX) st.undo.shift(); st.redo = []; st.last = snap; st.sig = sg; History.update();
+  },
+  undo(key){
+    History.commit(key); const st = History._st(key); if(!st.undo.length){ toast('Nothing to undo.'); return; }
+    const snap = st.undo.pop(); st.redo.push(st.last); st.last = snap; st.sig = History._sig(snap); History.def[key].apply(snap); History.update(); toast('Undone.');
+  },
+  redo(key){
+    History.commit(key); const st = History._st(key); if(!st.redo.length){ toast('Nothing to redo.'); return; }
+    const snap = st.redo.pop(); st.undo.push(st.last); st.last = snap; st.sig = History._sig(snap); History.def[key].apply(snap); History.update(); toast('Redone.');
+  },
+  update(){ Object.keys(History.def).forEach(k=>{ const st = History._st(k); const u = document.getElementById('hisUndo_'+k), r = document.getElementById('hisRedo_'+k); if(u){ u.disabled = !st.undo.length; u.title = 'Undo (Ctrl/Cmd+Z) — '+st.undo.length+' step'+(st.undo.length===1?'':'s'); } if(r){ r.disabled = !st.redo.length; r.title = 'Redo (Ctrl/Cmd+Shift+Z)'; } }); },
+  btns(key){ return `<button class="btn btn-sm" id="hisUndo_${key}" onclick="History.undo('${key}')" disabled>↶ Undo</button><button class="btn btn-sm" id="hisRedo_${key}" onclick="History.redo('${key}')" disabled>↷ Redo</button>`; }
+};
+(function(){
+  const _put = DB.put;
+  DB.put = function(store){ const r = _put.apply(this,arguments); if(store==='spreads') History.touch('book'); else if(store==='projects') History.touch('cover'); return r; };
+  document.addEventListener('keydown',e=>{
+    if(!(e.ctrlKey||e.metaKey) || e.altKey) return; const k = e.key.toLowerCase(); if(k!=='z' && k!=='y') return;
+    const t = e.target; if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+    const act = document.querySelector('.view.active'); const key = Object.keys(History.def).find(x=>History.def[x].view===(act&&act.id)); if(!key) return;
+    e.preventDefault(); (k==='y' || e.shiftKey) ? History.redo(key) : History.undo(key);
+  });
+})();
+
+/* ---------- Global Undo / Redo for every other workspace ----------
+   Works at the save layer: every DB.put/DB.del is compared with the last saved copy of that record, and the
+   difference becomes an undo step. Edits made within ~0.7 s of each other count as one step.
+   (The Illustrated Book and Cover workspaces keep their own richer History above.) */
+const Undo = {
+  MAX:80, stacks:{}, ready:false, applying:false, shadow:new Map(),
+  _c(v){ if(Array.isArray(v)){ const o = new Array(v.length); for(let i=0;i<v.length;i++) o[i] = Undo._c(v[i]); return o; }
+         if(v && typeof v==='object'){ const pr = Object.getPrototypeOf(v); if(pr!==Object.prototype && pr!==null) return v; const o = {}; for(const k in v) o[k] = Undo._c(v[k]); return o; }
+         return v; },
+  _eq(a,b){ if(a===b) return true; if(typeof a!=='object' || typeof b!=='object' || !a || !b) return false;
+            if(Array.isArray(a)!==Array.isArray(b)) return false;
+            const ka = Object.keys(a).filter(k=>a[k]!==undefined), kb = Object.keys(b).filter(k=>b[k]!==undefined); if(ka.length!==kb.length) return false;
+            for(const k of ka){ if(!Undo._eq(a[k],b[k])) return false; } return true; },
+  prime(){ Undo.shadow.clear(); Undo.stacks = {}; DB.STORES.forEach(st=>{ if(st==='meta' || !Array.isArray(State[st])) return; State[st].forEach(r=>{ if(r && r.id!=null) Undo.shadow.set(st+'|'+r.id, Undo._c(r)); }); }); Undo.ready = true; Undo.update(); },
+  ctx(){
+    if(document.getElementById('boardOverlay').classList.contains('open')) return 'board';
+    const vs = document.getElementById('videoStudioOverlay'); if(vs && vs.classList.contains('open')) return 'vs';
+    const act = document.querySelector('.view.active'); if(!act) return null;
+    if(Object.keys(History.def).some(k=>History.def[k].view===act.id)) return null;     // those two have their own History
+    return act.id;
+  },
+  _st(c){ return Undo.stacks[c] || (Undo.stacks[c] = {undo:[],redo:[]}); },
+  onWrite(store,id,after){
+    if(!Undo.ready || Undo.applying || store==='meta') return;
+    const key = store+'|'+id, before = Undo.shadow.get(key);
+    if(before!==undefined && after!==null && Undo._eq(before,after)) return;
+    const ctx = Undo.ctx(); const keep = after===null ? null : Undo._c(after);
+    if(keep===null) Undo.shadow.delete(key); else Undo.shadow.set(key,keep);
+    if(!ctx) return;
+    const st = Undo._st(ctx), now = Date.now(); let g = st.undo[st.undo.length-1];
+    if(!g || g.dead || now-g.tl>700 || now-g.t0>4000){ g = {t0:now, tl:now, map:new Map(), dead:false}; st.undo.push(g); if(st.undo.length>Undo.MAX) st.undo.shift(); }
+    g.tl = now; st.redo = [];
+    const ex = g.map.get(key);
+    if(ex) ex.after = keep; else g.map.set(key,{store,id,before:before===undefined?null:before,after:keep});
+    if(g.map.size>400){ g.dead = true; g.map.clear(); }
+    Undo.update();
+  },
+  async _apply(entries,dir){      // dir 'before' (undo) or 'after' (redo)
+    Undo.applying = true;
+    try{
+      for(const e of entries){
+        const want = e[dir]; const arr = State[e.store]; if(!Array.isArray(arr)) continue;
+        const i = arr.findIndex(r=>r.id===e.id);
+        if(want===null){ if(i>=0) arr.splice(i,1); Undo.shadow.delete(e.store+'|'+e.id); await Undo._del(e.store,e.id); }
+        else {
+          const rec = Undo._c(want);
+          if(i>=0){ Object.keys(arr[i]).forEach(k=>{ delete arr[i][k]; }); Object.assign(arr[i],rec); } else arr.push(rec);
+          Undo.shadow.set(e.store+'|'+e.id,Undo._c(want)); await Undo._put(e.store,i>=0?arr[i]:rec);
+        }
+      }
+    } finally { Undo.applying = false; }
+  },
+  _flushPending(){ try{ if(document.getElementById('boardOverlay').classList.contains('open') && Board.saveTimer) Board.commit(); }catch(e){} },
+  async step(dir){        // dir -1 undo, +1 redo
+    const c = Undo.ctx();
+    if(c===null){ const act = document.querySelector('.view.active'); const key = Object.keys(History.def).find(k=>History.def[k].view===(act&&act.id)); if(key){ dir<0 ? History.undo(key) : History.redo(key); } return; }
+    Undo._flushPending();
+    const st = Undo._st(c); const g = (dir<0 ? st.undo : st.redo).pop();
+    if(!g){ toast(dir<0?'Nothing to undo here.':'Nothing to redo here.'); Undo.update(); return; }
+    const entries = [...g.map.values()]; if(dir<0) entries.reverse();
+    await Undo._apply(entries, dir<0?'before':'after');
+    (dir<0 ? st.redo : st.undo).push(g);
+    Undo._refresh(c);
+    const names = [...new Set(entries.map(e=>e.store))].join(', ');
+    toast((dir<0?'Undone':'Redone')+' · '+entries.length+' change'+(entries.length===1?'':'s')+' ('+names+')');
+    Undo.update();
+  },
+  _refresh(c){
+    try{
+      if(c==='board'){ const rec = (Board.ownerType==='shot' ? State.shots : State.assets).find(x=>x.id===Board.ownerId);
+        if(rec){ Board.items = (rec.boardItems||[]).map(i=>{ const o = {...i}; if(i.points) o.points = i.points.map(p=>({...p})); return o; }); Board.groups = (rec.boardGroups||[]).map(g=>({...g})); Board.selected = new Set(); Board.render(); } return; }
+      if(c==='vs'){ const v = VideoStudio; if(v.renderScrubMarks) v.renderScrubMarks(); if(v.renderSyncOverlay) v.renderSyncOverlay(); return; }
+      const name = String(c).replace(/^view-/,''); Views.render(name);
+    }catch(e){ console.warn('Undo refresh failed',e); }
+  },
+  update(){
+    const c = Undo.ctx(); let nu = 0, nr = 0;
+    if(c===null){ const act = document.querySelector('.view.active'); const key = Object.keys(History.def).find(k=>History.def[k].view===(act&&act.id)); if(key){ const st = History._st(key); nu = st.undo.length; nr = st.redo.length; } }
+    else { const st = Undo._st(c); nu = st.undo.length; nr = st.redo.length; }
+    document.querySelectorAll('[data-undo]').forEach(u=>{ u.disabled = !nu; u.title = 'Undo (Ctrl/Cmd+Z)'+(nu?' — '+nu+' step'+(nu===1?'':'s'):''); });
+    document.querySelectorAll('[data-redo]').forEach(r=>{ r.disabled = !nr; r.title = 'Redo (Ctrl/Cmd+Shift+Z)'; });
+  }
+};
+(function(){
+  Undo._put = DB.put; Undo._del = DB.del;
+  const _p = DB.put, _d = DB.del;
+  DB.put = function(store,obj){ try{ if(obj && obj.id!=null) Undo.onWrite(store,obj.id,obj); }catch(e){ console.warn(e); } return _p.apply(this,arguments); };
+  DB.del = function(store,id){ try{ Undo.onWrite(store,id,null); }catch(e){ console.warn(e); } return _d.apply(this,arguments); };
+  Undo._put = _p; Undo._del = _d;
+  document.addEventListener('keydown',e=>{
+    if(!(e.ctrlKey||e.metaKey) || e.altKey) return; const k = e.key.toLowerCase(); if(k!=='z' && k!=='y') return;
+    const t = e.target; if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+    if(Undo.ctx()===null) return;                                   // Book / Cover workspaces: History handles it
+    if(typeof VideoStudio!=='undefined' && VideoStudio.drawing) return;
+    e.preventDefault(); Undo.step((k==='y' || e.shiftKey) ? 1 : -1);
+  });
+  setInterval(()=>Undo.update(),500);
+})();
+
 const CanvasZoom = {
   LEVELS:[0.25,0.5,0.75,1,1.5,2,3,4], cfg:{}, _ro:{},
   register(key,o){
@@ -4454,6 +4615,7 @@ const CoverWorkspace = {
   render(){
     CanvasZoom.register('cover',{el:'cvwsCanvas', wrap:'cvwsCanvasWrap', ctl:'cvwsZoomCtl'});
     CoverWorkspace.ensureTexts();
+    if(!CoverWorkspace._histBusy){ History.enter('cover'); }
     CoverWorkspace.renderJacket();
     CoverWorkspace.render3DMock();
     CoverWorkspace.renderAB();
@@ -5274,6 +5436,7 @@ const BookWorkspace = {
 
   render(){
     const p = currentProject();
+    History.enter('book');
     document.getElementById('bkwsManuscript').value = p ? (p.manuscriptText||'') : '';
     const guides = (p && p.bookGuides) || {};
     document.getElementById('bkwsGBleed').checked = guides.bleed!==false;
