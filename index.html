@@ -1204,9 +1204,11 @@ tr:hover .row-actions{opacity:1;}
               <div class="tabs" style="margin:0 0 8px;">
                 <button class="tab active" data-bkwstab="preflight" onclick="BookWorkspace.setRightTab('preflight')">Pre-Flight</button>
                 <button class="tab" data-bkwstab="ratio" onclick="BookWorkspace.setRightTab('ratio')">Ratio &amp; Type</button>
+                <button class="tab" data-bkwstab="text" onclick="BookWorkspace.setRightTab('text')">Spread Text</button>
               </div>
               <div id="bkwsPreflightWrap"></div>
               <div id="bkwsRatioWrap" style="display:none;"></div>
+              <div id="bkwsTextWrap" style="display:none;"></div>
             </div>
           </div>
           <div class="bkws-bottom">
@@ -5175,12 +5177,16 @@ const BookWorkspace = {
     document.getElementById('bkwsGCmyk').checked = !!guides.cmyk;
     if(p){ const spreads = projSpreads(p.id); if(!BookWorkspace.activeSpreadId || !spreads.find(s=>s.id===BookWorkspace.activeSpreadId)) BookWorkspace.activeSpreadId = spreads[0] ? spreads[0].id : null; }
     else BookWorkspace.activeSpreadId = null;
+    const ms = (p && p.manuscriptText) || '';
+    BookWorkspace._chunks = ms.trim() ? ms.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean) : null;
     BookWorkspace.renderPageTree();
     BookWorkspace.renderChunks();
     BookWorkspace.drawCanvas();
     BookWorkspace.renderPreflight();
     BookWorkspace.renderRatio();
     BookWorkspace.renderPacingStrip();
+    BookWorkspace.renderTextPanel();
+    BookWorkspace.wireCanvas();
   },
   saveManuscript(){
     const p = currentProject(); if(!p) return;
@@ -5201,12 +5207,12 @@ const BookWorkspace = {
     const spreads = projSpreads(p.id);
     if(countEl) countEl.textContent = spreads.length+' spread'+(spreads.length===1?'':'s');
     wrap.innerHTML = spreads.length ? spreads.map(s=>`<div class="bkws-page-tree-row ${s.id===BookWorkspace.activeSpreadId?'active':''}" onclick="BookWorkspace.selectSpread('${s.id}')" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="BookWorkspace.dropChunk(event,'${s.id}')">
-      <span class="idx">${s.spreadIndex}</span><span class="txt">${escapeHtml(s.pageRange||'untitled')} ${s.imageData?'🖼':''}</span>
+      <span class="idx">${s.spreadIndex}</span><span class="txt">${escapeHtml(s.pageRange||'untitled')} ${s.imageData?'🖼':''}${(s.text||'').trim()?' 📝':''}</span>
     </div>`).join('') : '<div class="help-block" style="padding:10px;">No spreads yet — add some from the Spreads tab.</div>';
   },
   selectSpread(id){
     BookWorkspace.activeSpreadId = id;
-    BookWorkspace.renderPageTree(); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip();
+    BookWorkspace.renderPageTree(); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderTextPanel();
   },
   chunkManuscript(){
     const text = document.getElementById('bkwsManuscript').value;
@@ -5219,18 +5225,127 @@ const BookWorkspace = {
     const wrap = document.getElementById('bkwsChunks'); if(!wrap) return;
     const chunks = BookWorkspace._chunks;
     if(!chunks){ wrap.innerHTML = ''; return; }
-    wrap.innerHTML = chunks.length ? chunks.map((c,i)=>`<div class="bkws-chunk" draggable="true" ondragstart="BookWorkspace.dragChunkStart(event,${i})" title="Drag onto a page in the list above">${escapeHtml(c.slice(0,160))}${c.length>160?'…':''}</div>`).join('') : '<div class="help-block">No paragraphs found.</div>';
+    const p = currentProject(); const used = new Set(p ? projSpreads(p.id).map(x=>(x.text||'').trim()).filter(Boolean) : []);
+    wrap.innerHTML = chunks.length ? chunks.map((c,i)=>`<div class="bkws-chunk" draggable="true" ondragstart="BookWorkspace.dragChunkStart(event,${i})" title="Drag onto a page in the list above, or use the button">${used.has(c)?'<span style="color:var(--good);">✓ </span>':''}${escapeHtml(c.slice(0,160))}${c.length>160?'…':''}
+      <div><button class="btn btn-sm" style="margin-top:4px;" onclick="BookWorkspace.assignChunkToActive(${i})">→ Put on selected spread</button></div></div>`).join('') : '<div class="help-block">No paragraphs found.</div>';
   },
   dragChunkStart(e,i){ e.dataTransfer.setData('text/plain', String(i)); },
   dropChunk(e, spreadId){
     e.preventDefault(); e.currentTarget.classList.remove('drag-over');
     const i = parseInt(e.dataTransfer.getData('text/plain'),10);
+    BookWorkspace._assignChunk(i, spreadId);
+  },
+  assignChunkToActive(i){
+    if(!BookWorkspace.activeSpreadId){ toast('Select a spread in the Pages list first.'); return; }
+    BookWorkspace._assignChunk(i, BookWorkspace.activeSpreadId);
+  },
+  _assignChunk(i, spreadId){
     const chunks = BookWorkspace._chunks||[]; if(isNaN(i) || !chunks[i]) return;
     const s = State.spreads.find(x=>x.id===spreadId); if(!s) return;
     s.text = chunks[i]; DB.put('spreads', s);
-    toast(`Assigned paragraph to spread ${s.spreadIndex}.`);
-    BookWorkspace.renderPageTree(); BookWorkspace.renderRatio();
-    if(BookWorkspace.activeSpreadId===spreadId) BookWorkspace.renderPreflight();
+    toast(`Text placed on spread ${s.spreadIndex} — drag it on the canvas or tune it in the Spread Text tab.`);
+    BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip();
+    if(BookWorkspace.activeSpreadId===spreadId){ BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); BookWorkspace.setRightTab('text'); }
+  },
+
+  /* ---- Spread text: typeset on the canvas ---- */
+  _fontFam(name){ return ['fantasy','cursive','serif','sans-serif','monospace'].includes(name) ? name : (/[,"]/.test(name) ? name : `"${name}"`); },
+  _textBox(s){ return Object.assign({side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:''}, s.textBox||{}); },
+  _paintText(ctx,p,s,PPI,trimW,trimH,bleed,wantHit){
+    const txt = (s.text||'').trim(); if(!txt) return null;
+    const tb = BookWorkspace._textBox(s);
+    const st = tb.styleId ? (p.typographyStyles||[]).find(x=>x.id===tb.styleId) : null;
+    const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font);
+    const size = st ? (st.size||16) : tb.size, color = st ? (st.color||'#fff') : tb.color;
+    const bp = bleed*PPI, pw = trimW*PPI, ph = trimH*PPI;
+    const px0 = bp + (tb.side==='left' ? 0 : pw), py0 = bp;
+    const px = size*PPI/72, lh = px*(tb.lh||1.4), maxW = (tb.w/100)*pw;
+    ctx.save();
+    ctx.font = `${px}px ${fam}, Georgia, serif`;
+    const lines = CoverWorkspace._wrap(ctx,txt,maxW);
+    const blockH = lines.length*lh;
+    const cx = px0 + (tb.x/100)*pw, cy = py0 + (tb.y/100)*ph;
+    if(tb.panel){
+      const pad = 0.12*PPI, r = 0.08*PPI, x = cx-maxW/2-pad, y = cy-blockH/2-pad, w = maxW+pad*2, h = blockH+pad*2;
+      ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill();
+    }
+    ctx.textBaseline = 'middle'; ctx.textAlign = tb.align||'center';
+    const ax = cx + (tb.align==='left' ? -maxW/2 : tb.align==='right' ? maxW/2 : 0);
+    if(tb.shadow){ ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=px*.18; ctx.shadowOffsetX=px*.05; ctx.shadowOffsetY=px*.05; }
+    ctx.fillStyle = color;
+    lines.forEach((ln,i)=>ctx.fillText(ln, ax, cy-blockH/2+lh*(i+.5)));
+    ctx.restore();
+    return {x:cx-maxW/2, y:cy-blockH/2, w:maxW, h:blockH, px0, py0, pw, ph};
+  },
+  async _composite(s,ppi){
+    const p = currentProject(); const cm = p.coverMeta||{};
+    const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, bleed = 0.125;
+    const c = document.createElement('canvas'); c.width = Math.round((trimW*2+bleed*2)*ppi); c.height = Math.round((trimH+bleed*2)*ppi);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+    if(s.imageData){ try{ const img = await BookWorkspace._img(s.imageData); ctx.drawImage(img,0,0,c.width,c.height); }catch(e){} }
+    BookWorkspace._paintText(ctx,p,s,ppi,trimW,trimH,bleed,false);
+    return c.toDataURL('image/jpeg',0.9);
+  },
+  wireCanvas(){
+    const c = document.getElementById('bkwsCanvas'); if(!c || c._bkwsWired) return; c._bkwsWired = true;
+    const pt = e=>{ const r=c.getBoundingClientRect(); return {x:(e.clientX-r.left)*c.width/r.width, y:(e.clientY-r.top)*c.height/r.height}; };
+    const over = q=>{ const h=BookWorkspace._textHit; return h && q.x>=h.x && q.x<=h.x+h.w && q.y>=h.y && q.y<=h.y+h.h; };
+    c.addEventListener('pointerdown',e=>{
+      const q = pt(e); if(!over(q)) return;
+      const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+      s.textBox = BookWorkspace._textBox(s); const h = BookWorkspace._textHit;
+      BookWorkspace._drag = {s, h, start:q, ox:s.textBox.x, oy:s.textBox.y};
+      try{ c.setPointerCapture(e.pointerId); }catch(err){}
+      c.style.cursor = 'grabbing';
+      if(BookWorkspace._rightTab!=='text') BookWorkspace.setRightTab('text');
+    });
+    c.addEventListener('pointermove',e=>{
+      const d = BookWorkspace._drag, q = pt(e);
+      if(!d){ c.style.cursor = over(q) ? 'grab' : 'default'; return; }
+      d.s.textBox.x = Math.max(-10,Math.min(110, d.ox+(q.x-d.start.x)/d.h.pw*100));
+      d.s.textBox.y = Math.max(-10,Math.min(110, d.oy+(q.y-d.start.y)/d.h.ph*100));
+      const ix = document.getElementById('bkwsTb_x'), iy = document.getElementById('bkwsTb_y');
+      if(ix) ix.value = d.s.textBox.x.toFixed(1); if(iy) iy.value = d.s.textBox.y.toFixed(1);
+      BookWorkspace.drawCanvas();
+    });
+    const end = ()=>{ const d = BookWorkspace._drag; if(!d) return; BookWorkspace._drag = null; c.style.cursor='default'; DB.put('spreads', d.s); };
+    c.addEventListener('pointerup',end); c.addEventListener('pointercancel',end);
+  },
+  renderTextPanel(){
+    const wrap = document.getElementById('bkwsTextWrap'); if(!wrap) return;
+    const p = currentProject(); const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
+    if(!p || !s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list to add text to it.</div>'; return; }
+    const tb = BookWorkspace._textBox(s); const styles = p.typographyStyles||[];
+    const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round(tb[key]*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setTextBox('${key}',this.value)"></div>`;
+    const fonts = CoverWorkspace.FONTS;
+    wrap.innerHTML = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Spread ${s.spreadIndex} text. Drag it on the canvas to move it.</div>
+      <div class="field"><label>Text</label><textarea rows="6" oninput="BookWorkspace.setSpreadText(this.value)" placeholder="Type, or send a paragraph from the manuscript">${escapeHtml(s.text||'')}</textarea></div>
+      <div class="cvws-field-row"><div class="field"><label>Page</label><select onchange="BookWorkspace.setTextBox('side',this.value)"><option value="left" ${tb.side==='left'?'selected':''}>Left page</option><option value="right" ${tb.side!=='left'?'selected':''}>Right page</option></select></div>
+        <div class="field"><label>Align</label><select onchange="BookWorkspace.setTextBox('align',this.value)">${['left','center','right'].map(a=>`<option ${tb.align===a?'selected':''}>${a}</option>`).join('')}</select></div></div>
+      <div class="field"><label>Typography style</label><select onchange="BookWorkspace.setTextBox('styleId',this.value)"><option value="">Custom</option>${styles.map(st=>`<option value="${st.id}" ${tb.styleId===st.id?'selected':''}>${escapeHtml(st.name)}</option>`).join('')}</select></div>
+      ${tb.styleId ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Font, size and color come from the style (edit them under Ratio &amp; Type → Pre-Flight panel → Typography Styles).</div>' : `
+      <div class="field"><label>Font</label><select onchange="BookWorkspace.setTextBox('font',this.value)">${fonts.map(f=>`<option ${tb.font===f?'selected':''}>${f}</option>`).join('')}</select></div>
+      <div class="cvws-field-row">${num('size','Size (pt)',6,120,1)}<div class="field"><label>Color</label><input type="color" value="${tb.color}" oninput="BookWorkspace.setTextBox('color',this.value)"></div></div>`}
+      <div class="cvws-field-row">${num('x','X %',-10,110,.5)}${num('y','Y %',-10,110,.5)}</div>
+      <div class="cvws-field-row">${num('w','Width %',10,100,1)}${num('lh','Line height',.8,3,.05)}</div>
+      <div style="display:flex;gap:12px;margin:6px 0;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.shadow?'checked':''} onchange="BookWorkspace.setTextBox('shadow',this.checked)"> Shadow</label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${tb.panel?'checked':''} onchange="BookWorkspace.setTextBox('panel',this.checked)"> Dark panel</label></div>
+      <button class="btn btn-sm btn-danger" onclick="BookWorkspace.setSpreadText(''); BookWorkspace.renderTextPanel();">Clear text</button>`;
+  },
+  setSpreadText(v){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+    s.text = v; clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300);
+    BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderChunks();
+  },
+  setTextBox(key,val){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+    if(['x','y','w','size','lh'].includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
+    s.textBox = BookWorkspace._textBox(s); s.textBox[key] = val;
+    clearTimeout(BookWorkspace._saveT); BookWorkspace._saveT = setTimeout(()=>DB.put('spreads',s),300);
+    BookWorkspace.drawCanvas();
+    if(['styleId','side'].includes(key)) BookWorkspace.renderTextPanel();
   },
 
   /* ---- Spread canvas with print guides ---- */
@@ -5266,6 +5381,10 @@ const BookWorkspace = {
     }
     const guides = p.bookGuides || {bleed:true,trim:true,safety:true,gutter:true,cmyk:false};
     const bleedPx = bleed*PPI;
+    BookWorkspace._textHit = s ? BookWorkspace._paintText(ctx,p,s,PPI,trimW,trimH,bleed,true) : null;
+    if(BookWorkspace._textHit && BookWorkspace._rightTab==='text'){
+      const h = BookWorkspace._textHit; ctx.save(); ctx.strokeStyle='rgba(80,200,255,.9)'; ctx.setLineDash([5,3]); ctx.lineWidth=1.5; ctx.strokeRect(h.x-4,h.y-4,h.w+8,h.h+8); ctx.restore();
+    }
     if(guides.bleed!==false){
       ctx.save(); ctx.strokeStyle='rgba(255,80,80,.85)'; ctx.setLineDash([6,5]); ctx.lineWidth=1.5;
       ctx.strokeRect(1,1,canvas.width-2,canvas.height-2); ctx.restore();
@@ -5392,7 +5511,11 @@ const BookWorkspace = {
     document.querySelectorAll('[data-bkwstab]').forEach(b=>b.classList.toggle('active', b.dataset.bkwstab===tab));
     document.getElementById('bkwsPreflightWrap').style.display = tab==='preflight' ? '' : 'none';
     document.getElementById('bkwsRatioWrap').style.display = tab==='ratio' ? '' : 'none';
+    document.getElementById('bkwsTextWrap').style.display = tab==='text' ? '' : 'none';
+    BookWorkspace._rightTab = tab;
     if(tab==='ratio') BookWorkspace.renderRatio();
+    if(tab==='text') BookWorkspace.renderTextPanel();
+    BookWorkspace.drawCanvas();
   },
 
   /* ---- Page-turn pacing strip ---- */
@@ -5414,8 +5537,8 @@ const BookWorkspace = {
   /* ---- Interactive digital dummy ---- */
   openDigitalDummy(){
     const p = currentProject(); if(!p) return;
-    const spreads = projSpreads(p.id).filter(s=>s.imageData);
-    if(spreads.length===0){ toast('Upload art to at least one spread first.'); return; }
+    const spreads = projSpreads(p.id).filter(s=>s.imageData || (s.text||'').trim());
+    if(spreads.length===0){ toast('Upload art or add text to at least one spread first.'); return; }
     BookWorkspace._dummySpreads = spreads; BookWorkspace.dummyIndex = 0;
     document.getElementById('bkwsDummyBackdrop').style.display = 'flex';
     BookWorkspace.renderDummyFrame();
@@ -5433,7 +5556,7 @@ const BookWorkspace = {
     const arr = BookWorkspace._dummySpreads||[]; const s = arr[BookWorkspace.dummyIndex]; if(!s) return;
     const img = document.getElementById('bkwsDummyImg');
     img.style.transition = 'opacity .2s, transform .2s'; img.style.opacity = 0;
-    setTimeout(()=>{ img.src = s.imageData; img.style.transform = 'rotateY(6deg)'; img.style.opacity = 1; setTimeout(()=>{ img.style.transform = 'rotateY(0deg)'; },80); }, 90);
+    setTimeout(async ()=>{ img.src = await BookWorkspace._composite(s,70); img.style.transform = 'rotateY(6deg)'; img.style.opacity = 1; setTimeout(()=>{ img.style.transform = 'rotateY(0deg)'; },80); }, 90);
     document.getElementById('bkwsDummyLabel').textContent = `Spread ${s.spreadIndex} (${BookWorkspace.dummyIndex+1}/${arr.length})`;
   },
   dummyTogglePlay(){
