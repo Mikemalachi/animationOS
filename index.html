@@ -5301,7 +5301,7 @@ const BookWorkspace = {
     const spreads = projSpreads(p.id);
     if(countEl) countEl.textContent = spreads.length+' spread'+(spreads.length===1?'':'s');
     wrap.innerHTML = spreads.length ? spreads.map(s=>`<div class="bkws-page-tree-row ${s.id===BookWorkspace.activeSpreadId?'active':''}" onclick="BookWorkspace.selectSpread('${s.id}')" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="BookWorkspace.dropChunk(event,'${s.id}')">
-      <span class="idx">${s.spreadIndex}</span><span class="txt">${escapeHtml(s.pageRange||'untitled')} ${s.imageData?'🖼':''}${(s.text||'').trim()?' 📝':''}</span>
+      <span class="idx">${s.spreadIndex}</span><span class="txt">${escapeHtml(s.pageRange||'untitled')} ${s.imageData?'🖼':((s.bgLeft||s.bgRight)?'🎨':'')}${(s.text||'').trim()?' 📝':''}</span>
     </div>`).join('') : '<div class="help-block" style="padding:10px;">No spreads yet — add some from the Spreads tab.</div>';
   },
   selectSpread(id){
@@ -5345,7 +5345,7 @@ const BookWorkspace = {
 
   /* ---- Spread text: typeset on the canvas ---- */
   _fontFam(name){ return ['fantasy','cursive','serif','sans-serif','monospace'].includes(name) ? name : (/[,"]/.test(name) ? name : `"${name}"`); },
-  _boxDefaults(){ return {text:'', side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000'}; },
+  _boxDefaults(){ return {text:'', side:'right', x:50, y:82, w:80, font:'Georgia', size:16, color:'#ffffff', align:'center', lh:1.4, shadow:true, panel:false, styleId:'', outline:false, outlineColor:'#000000', h:38, linkTo:null}; },
   _texts(s){
     if(!Array.isArray(s.texts)){
       s.texts = [];
@@ -5366,14 +5366,60 @@ const BookWorkspace = {
     a.push(box); BookWorkspace._syncText(s); BookWorkspace.sel = {kind:'text', id:box.id};
     return box;
   },
+  /* ---- Linked text boxes: text flows from one box into the next (same page, next page, next spread) ---- */
+  _allBoxes(p){ const out=[]; projSpreads(p.id).forEach(sp=>BookWorkspace._texts(sp).forEach(b=>out.push({b,s:sp}))); return out; },
+  _wrapP(ctx,text,maxW){
+    const out = [];
+    String(text||'').split('\n').forEach(para=>{
+      if(!para.trim()){ out.push({t:'',hard:true}); return; }
+      let line = '';
+      para.trim().split(/\s+/).forEach(word=>{
+        const test = line ? line+' '+word : word;
+        if(line && ctx.measureText(test).width>maxW){ out.push({t:line,hard:false}); line = word; } else line = test;
+      });
+      out.push({t:line,hard:true});
+    });
+    return out;
+  },
+  _flow(p){
+    const all = BookWorkspace._allBoxes(p), byId = new Map(all.map(o=>[o.b.id,o]));
+    const targeted = new Set(); all.forEach(o=>{ if(o.b.linkTo && byId.has(o.b.linkTo) && o.b.linkTo!==o.b.id) targeted.add(o.b.linkTo); });
+    const map = new Map();
+    const cm = p.coverMeta||{}; const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, REF = 100;
+    const cv = BookWorkspace._flowCv || (BookWorkspace._flowCv = document.createElement('canvas')); const ctx = cv.getContext('2d');
+    const hasNext = b=>b.linkTo && byId.has(b.linkTo) && b.linkTo!==b.id;
+    all.forEach(o=>{
+      if(targeted.has(o.b.id) || !hasNext(o.b)) return;   // chain heads only
+      let cur = o, input = o.b.text||'', first = true; const seen = new Set();
+      while(cur && !seen.has(cur.b.id)){
+        seen.add(cur.b.id); const tb = cur.b;
+        const st = tb.styleId ? (p.typographyStyles||[]).find(x=>x.id===tb.styleId) : null;
+        const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font); const size = st ? (st.size||16) : tb.size;
+        const px = size*REF/72, lh = px*(tb.lh||1.4), maxW = (tb.w/100)*trimW*REF, hPx = ((tb.h||38)/100)*trimH*REF;
+        const maxLines = Math.max(1, Math.floor(hPx/lh));
+        ctx.font = `${px}px ${fam}, Georgia, serif`;
+        const L = BookWorkspace._wrapP(ctx,input,maxW);
+        const next = hasNext(tb) ? byId.get(tb.linkTo) : null;
+        const shown = L.slice(0,maxLines); let rest = L.slice(maxLines);
+        while(rest.length && !rest[0].t) rest.shift();
+        const info = {lines:shown.map(l=>l.t), input, hasNext:!!next, hasPrev:!first, overflow:false, maxLines};
+        if(!next) info.overflow = rest.length>0;
+        map.set(tb.id, info);
+        input = rest.map((l,i)=>l.t+(i<rest.length-1 ? (l.hard?'\n':' ') : '')).join('');
+        cur = next; first = false;
+      }
+    });
+    return map;
+  },
   _paintTexts(ctx,p,s,PPI,trimW,trimH,bleed,hits){
+    const fm = BookWorkspace._flow(p);
     BookWorkspace._texts(s).forEach(tb=>{
-      const h = BookWorkspace._paintBox(ctx,p,tb,PPI,trimW,trimH,bleed);
+      const h = BookWorkspace._paintBox(ctx,p,tb,PPI,trimW,trimH,bleed,fm.get(tb.id)||null,!!hits);
       if(h && hits) hits.push(Object.assign({kind:'text', id:tb.id}, h));
     });
   },
-  _paintBox(ctx,p,tb,PPI,trimW,trimH,bleed){
-    const txt = (tb.text||'').trim(); if(!txt) return null;
+  _paintBox(ctx,p,tb,PPI,trimW,trimH,bleed,info,guide){
+    const txt = (tb.text||'').trim(); if(!txt && !info) return null;
     const st = tb.styleId ? (p.typographyStyles||[]).find(x=>x.id===tb.styleId) : null;
     const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font);
     const size = st ? (st.size||16) : tb.size, color = st ? (st.color||'#fff') : tb.color;
@@ -5382,20 +5428,84 @@ const BookWorkspace = {
     const px = size*PPI/72, lh = px*(tb.lh||1.4), maxW = (tb.w/100)*pw;
     ctx.save();
     ctx.font = `${px}px ${fam}, Georgia, serif`;
-    const lines = CoverWorkspace._wrap(ctx,txt,maxW);
-    const blockH = lines.length*lh;
+    const lines = info ? info.lines : CoverWorkspace._wrap(ctx,txt,maxW);
+    const blockH = info ? ((tb.h||38)/100)*ph : lines.length*lh;
     const cx = px0 + (tb.x/100)*pw, cy = py0 + (tb.y/100)*ph;
-    if(tb.panel){
-      const pad = 0.12*PPI, r = 0.08*PPI, x = cx-maxW/2-pad, y = cy-blockH/2-pad, w = maxW+pad*2, h = blockH+pad*2;
+    const top = cy - blockH/2;
+    const textH = lines.length*lh;
+    const startY = info ? top : cy-blockH/2;
+    if(tb.panel && lines.length){
+      const pad = 0.12*PPI, r = 0.08*PPI, x = cx-maxW/2-pad, y = startY-pad, w = maxW+pad*2, h = (info?blockH:textH)+pad*2;
       ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill();
     }
     ctx.textBaseline = 'middle'; ctx.textAlign = tb.align||'center';
     const ax = cx + (tb.align==='left' ? -maxW/2 : tb.align==='right' ? maxW/2 : 0);
     if(tb.shadow){ ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=px*.18; ctx.shadowOffsetX=px*.05; ctx.shadowOffsetY=px*.05; }
     ctx.fillStyle = color;
-    lines.forEach((ln,i)=>{ const yy = cy-blockH/2+lh*(i+.5); if(tb.outline){ ctx.lineJoin='round'; ctx.lineWidth=px*.14; ctx.strokeStyle=tb.outlineColor||'#000'; ctx.strokeText(ln,ax,yy); } ctx.fillText(ln,ax,yy); });
+    lines.forEach((ln,i)=>{ const yy = startY+lh*(i+.5); if(tb.outline){ ctx.lineJoin='round'; ctx.lineWidth=px*.14; ctx.strokeStyle=tb.outlineColor||'#000'; ctx.strokeText(ln,ax,yy); } ctx.fillText(ln,ax,yy); });
     ctx.restore();
-    return {x:cx-maxW/2, y:cy-blockH/2, w:maxW, h:blockH, px0, py0, pw, ph};
+    if(guide && info){
+      ctx.save(); ctx.setLineDash([4,3]); ctx.lineWidth=1; ctx.strokeStyle = info.overflow ? 'rgba(255,90,90,.95)' : 'rgba(80,200,255,.55)';
+      ctx.strokeRect(cx-maxW/2, top, maxW, blockH);
+      ctx.setLineDash([]); ctx.font = '11px sans-serif'; ctx.textBaseline='top';
+      if(info.overflow){ ctx.fillStyle='rgba(255,90,90,.95)'; ctx.textAlign='right'; ctx.fillText('⚠ text overflows — link another box', cx+maxW/2, top+blockH+3); }
+      else if(info.hasNext){ ctx.fillStyle='rgba(80,200,255,.95)'; ctx.textAlign='right'; ctx.fillText('continues ➜', cx+maxW/2, top+blockH+3); }
+      if(info.hasPrev){ ctx.fillStyle='rgba(80,200,255,.95)'; ctx.textAlign='left'; ctx.fillText('➜ continued', cx-maxW/2, top-14); }
+      ctx.restore();
+    }
+    return {x:cx-maxW/2, y:top, w:maxW, h:info?blockH:textH, px0, py0, pw, ph};
+  },
+  /* ---- link management ---- */
+  _chainHead(p,id){
+    const all = BookWorkspace._allBoxes(p); let cur = id, guard = 0;
+    for(;;){ const prev = all.find(o=>o.b.linkTo===cur); if(!prev || guard++>500) return cur; cur = prev.b.id; }
+  },
+  _persist(spreads){ [...new Set(spreads)].forEach(sp=>{ BookWorkspace._syncText(sp); DB.put('spreads',sp); }); },
+  _refreshAll(){ BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderPreflight(); },
+  setLink(targetId){
+    const p = currentProject(); const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!p||!sp) return;
+    const tb = BookWorkspace._selBox(sp); if(!tb) return;
+    const all = BookWorkspace._allBoxes(p), byId = new Map(all.map(o=>[o.b.id,o])), fm = BookWorkspace._flow(p);
+    const touched = [sp];
+    // drop the old link: the old target keeps the text that was flowing into it
+    if(tb.linkTo && byId.has(tb.linkTo)){ const old = byId.get(tb.linkTo); const inf = fm.get(old.b.id); old.b.text = inf ? inf.input : (old.b.text||''); touched.push(old.s); }
+    tb.linkTo = null;
+    if(targetId){
+      const t = byId.get(targetId); if(!t || t.b.id===tb.id) { BookWorkspace._persist(touched); BookWorkspace._refreshAll(); return; }
+      // no loops: target must not be upstream of this box
+      let up = tb.id, guard = 0; for(;;){ if(up===targetId){ toast('That would make a loop — choose a box further along.'); BookWorkspace._persist(touched); BookWorkspace._refreshAll(); return; } const pr = all.find(o=>o.b.linkTo===up); if(!pr||guard++>500) break; up = pr.b.id; }
+      const headId = BookWorkspace._chainHead(p,tb.id); const head = byId.get(headId).b;
+      if((t.b.text||'').trim()){ head.text = ((head.text||'').trim()+'\n\n'+t.b.text.trim()).trim(); toast('The target box already had text — it was added to the end of the flowing text.'); }
+      t.b.text = '';
+      if(!tb.h) tb.h = 38; if(!t.b.h) t.b.h = 38;
+      tb.linkTo = targetId; touched.push(t.s, byId.get(headId).s);
+    }
+    BookWorkspace._persist(touched); BookWorkspace._refreshAll();
+  },
+  setBoxH(v){ const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!sp) return; const b = BookWorkspace._selBox(sp); if(!b) return; v = parseFloat(v); if(isNaN(v)) return; b.h = Math.max(5,Math.min(100,v)); BookWorkspace._saveSpreadSoon(sp); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); },
+  newLinkedBox(){
+    const p = currentProject(); const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!p||!sp) return;
+    const tb = BookWorkspace._selBox(sp); if(!tb) return;
+    const all = BookWorkspace._allBoxes(p);
+    // go to the end of this chain first
+    let end = tb, g = 0; while(end.linkTo && g++<500){ const n = all.find(o=>o.b.id===end.linkTo); if(!n) break; end = n.b; }
+    const endSp = all.find(o=>o.b.id===end.id).s;
+    let targetSp = endSp, side = 'right';
+    if(end.side==='left') side = 'right';
+    else {
+      const list = projSpreads(p.id); const i = list.findIndex(x=>x.id===endSp.id);
+      if(i>=0 && list[i+1]) targetSp = list[i+1];
+      else { const idx = Math.max(0,...list.map(x=>x.spreadIndex||0))+1; targetSp = {id:uid(), projectId:p.id, spreadIndex:idx, pageRange:'', text:'', characters:[], status:'not_started', imageData:null}; DB.put('spreads',targetSp); State.spreads.push(targetSp); toast('Added a new spread for the continuing text.'); }
+      side = 'left';
+    }
+    const nb = Object.assign(BookWorkspace._boxDefaults(), {id:uid(), side, x:end.x, y:end.y, w:end.w, h:end.h||38, font:end.font, size:end.size, color:end.color, align:end.align, lh:end.lh, styleId:end.styleId, shadow:end.shadow, panel:end.panel, outline:end.outline, outlineColor:end.outlineColor, text:''});
+    BookWorkspace._texts(targetSp).push(nb);
+    if(!end.h) end.h = 38; end.linkTo = nb.id;
+    BookWorkspace._persist([endSp,targetSp]);
+    if(targetSp.id!==BookWorkspace.activeSpreadId){ BookWorkspace.activeSpreadId = targetSp.id; }
+    BookWorkspace.sel = {kind:'text', id:nb.id};
+    BookWorkspace.renderPageTree(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderImagesPanel(); BookWorkspace._refreshAll();
+    toast(`Linked box created on spread ${targetSp.spreadIndex}, ${side==='left'?'left':'right'} page — overflow text will flow into it.`);
   },
   async _composite(s,ppi){
     const p = currentProject(); const cm = p.coverMeta||{};
@@ -5404,6 +5514,7 @@ const BookWorkspace = {
     await CoverWorkspace.ensureFonts(cm);
     const limgs = await BookWorkspace._layerImgs(s);
     const ctx = c.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+    BookWorkspace._paintBg(ctx,s,c.width,c.height);
     if(s.imageData){ try{ const img = await BookWorkspace._img(s.imageData); ctx.drawImage(img,0,0,c.width,c.height); }catch(e){} }
     BookWorkspace._paintLayers(ctx,s,limgs,ppi,trimW,trimH,bleed,null);
     BookWorkspace._paintTexts(ctx,p,s,ppi,trimW,trimH,bleed,null);
@@ -5470,7 +5581,16 @@ const BookWorkspace = {
     if(!s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list first.</div>'; return; }
     const layers = s.layers||[]; const sel = BookWorkspace.sel && BookWorkspace.sel.kind==='layer' ? layers.find(l=>l.id===BookWorkspace.sel.id) : null;
     const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round((sel[key]==null?(key==='opacity'?1:0):sel[key])*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setLayer('${key}',this.value)"></div>`;
+    const bgSw = ['#ffffff','#f4ead6','#fbe9c6','#f6d6d6','#cfe6f5','#d6ecd2','#e8dff5','#f2c230','#e8453c','#2f6fdb','#2e9e5b','#1a1a1a'];
+    const bgPrev = c=>`<span style="display:inline-block;width:34px;height:20px;border-radius:3px;border:1px solid var(--border);background:${c||'repeating-linear-gradient(45deg,#444 0 4px,#333 4px 8px)'};vertical-align:middle;"></span>`;
     wrap.innerHTML = `
+      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Page color</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">No art for this spread? Give its pages a solid color instead (also shows behind transparent PNGs). Prints and exports with the spread.</div>
+      <div style="font-size:12px;margin-bottom:6px;">Left ${bgPrev(s.bgLeft)} &nbsp; Right ${bgPrev(s.bgRight)}</div>
+      <div class="cvws-field-row"><div class="field"><label>Apply to</label><select onchange="BookWorkspace.setBgSide(this.value)"><option value="both" ${BookWorkspace._bgSide==='both'?'selected':''}>Both pages</option><option value="left" ${BookWorkspace._bgSide==='left'?'selected':''}>Left page</option><option value="right" ${BookWorkspace._bgSide==='right'?'selected':''}>Right page</option></select></div>
+        <div class="field"><label>Custom color</label><input type="color" value="${(BookWorkspace._bgSide==='right'?s.bgRight:s.bgLeft)||'#f4ead6'}" onchange="BookWorkspace.setBg(this.value)"></div></div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">${bgSw.map(c=>`<button title="${c}" style="width:24px;height:24px;border-radius:5px;border:2px solid var(--border);background:${c};cursor:pointer;padding:0;" onclick="BookWorkspace.setBg('${c}')"></button>`).join('')}<button class="btn btn-sm" onclick="BookWorkspace.clearBg()">Clear</button></div>
+      <hr style="border-color:var(--border-soft);margin:8px 0;">
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Add PNGs (transparent decorations, speech bubbles, title art) or photos on top of this spread's art. Drag them on the canvas.</div>
       <label class="btn btn-sm btn-gold" style="cursor:pointer;margin-bottom:8px;">+ Add PNG / image<input type="file" accept="image/*" style="display:none;" onchange="BookWorkspace.addLayer(this.files[0]); this.value='';"></label>
       ${layers.map((l,i)=>`<div class="bkws-page-tree-row ${sel&&sel.id===l.id?'active':''}" onclick="BookWorkspace.selectLayer('${l.id}')"><img src="${l.img}" style="width:26px;height:26px;object-fit:contain;background:#333;border-radius:3px;"><span class="txt">${escapeHtml(l.name||'image')}</span>
@@ -5509,16 +5629,29 @@ const BookWorkspace = {
     const p = currentProject(); const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
     if(!p || !s){ wrap.innerHTML = '<div class="help-block">Select a spread in the Pages list to add text to it.</div>'; return; }
     const boxes = BookWorkspace._texts(s); const tb = BookWorkspace._selBox(s); const styles = p.typographyStyles||[];
+    const flowMap = BookWorkspace._flow(p); const finfo = tb ? flowMap.get(tb.id) : null;
+    let linkOpts = '';
+    if(tb){
+      const allB = BookWorkspace._allBoxes(p); const up = new Set(); let u = tb.id, g = 0; up.add(u);
+      for(;;){ const pr = allB.find(o=>o.b.linkTo===u); if(!pr||g++>500) break; u = pr.b.id; up.add(u); }
+      linkOpts = allB.filter(o=>!up.has(o.b.id) && (!allB.some(q=>q.b.linkTo===o.b.id) || tb.linkTo===o.b.id)).map(o=>`<option value="${o.b.id}" ${tb.linkTo===o.b.id?'selected':''}>Spread ${o.s.spreadIndex} · ${o.b.side==='left'?'Left':'Right'} page · ${escapeHtml(((o.b.text||'').split('\n')[0]||'(empty box)').slice(0,28))}</option>`).join('');
+    }
     const num = (key,label,min,max,step)=>`<div class="field"><label>${label}</label><input type="number" id="bkwsTb_${key}" value="${Math.round(tb[key]*100)/100}" min="${min}" max="${max}" step="${step}" oninput="BookWorkspace.setTextBox('${key}',this.value)"></div>`;
     const fonts = CoverWorkspace.FONTS.concat(((p.coverMeta||{}).customFonts||[]).map(f=>f.name));
     const sw = ['#ffffff','#000000','#f4ead6','#c9a15a','#e8453c','#2f6fdb','#2e9e5b','#f2c230'];
     const list = `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Spread ${s.spreadIndex} — ${boxes.length} text box${boxes.length===1?'':'es'}. Click one on the canvas or in this list; drag to move.</div>
-      ${boxes.map(b=>`<div class="bkws-page-tree-row ${tb&&tb.id===b.id?'active':''}" onclick="BookWorkspace.selectTextBox('${b.id}')"><span class="txt">${escapeHtml(((b.text||'').split('\n')[0])||'(empty)')}</span><span style="font-size:10px;color:var(--text-faint);">${b.side==='left'?'L':'R'}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();BookWorkspace.removeTextBox('${b.id}')">✕</button></div>`).join('')}
+      ${boxes.map(b=>`<div class="bkws-page-tree-row ${tb&&tb.id===b.id?'active':''}" onclick="BookWorkspace.selectTextBox('${b.id}')"><span class="txt">${escapeHtml(((b.text||'').split('\n')[0])||((flowMap.get(b.id)&&flowMap.get(b.id).lines[0])||'(empty)'))}</span><span style="font-size:10px;color:var(--text-faint);">${(flowMap.get(b.id)&&(flowMap.get(b.id).hasPrev||flowMap.get(b.id).hasNext))?'🔗 ':''}${b.side==='left'?'L':'R'}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();BookWorkspace.removeTextBox('${b.id}')">✕</button></div>`).join('')}
       <button class="btn btn-sm btn-gold" style="margin:8px 0;" onclick="BookWorkspace.addTextBox()">+ Add text box</button>`;
     if(!tb){ wrap.innerHTML = list + '<div class="help-block">No text on this spread yet. Add a text box, or send a paragraph from the manuscript.</div>'; return; }
     wrap.innerHTML = list + `<hr style="border-color:var(--border-soft);margin:8px 0;">
-      <div class="field"><label>Text</label><textarea rows="6" oninput="BookWorkspace.setSpreadText(this.value)" placeholder="Type, or send a paragraph from the manuscript">${escapeHtml(s.text||'')}</textarea></div>
+      ${finfo && finfo.hasPrev ? `<div class="help-block" style="margin-bottom:8px;">This box receives overflow text from the previous box, so it has no text of its own. Edit the text in the first box of the chain.</div>` : `<div class="field"><label>Text${finfo&&finfo.hasNext?' (flows through the linked boxes)':''}</label><textarea rows="6" oninput="BookWorkspace.setSpreadText(this.value)" placeholder="Type, or send a paragraph from the manuscript">${escapeHtml(tb.text||'')}</textarea></div>`}
+      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Link text boxes</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">When the text doesn't fit this box's height it continues in the box you link to — even on another page or spread.</div>
+      <div class="field"><label>Overflow flows into</label><select onchange="BookWorkspace.setLink(this.value)"><option value="">— not linked —</option>${linkOpts}</select></div>
+      <div class="cvws-field-row">${num('h','Box height %',5,100,1)}<div class="field"><label>&nbsp;</label><button class="btn btn-sm btn-gold" onclick="BookWorkspace.newLinkedBox()" title="Creates the next box on the facing/next page and links it">+ New linked box on next page</button></div></div>
+      ${finfo ? (finfo.overflow ? '<div style="color:#ff6b6b;font-size:12px;margin-bottom:6px;">⚠ The text still overflows the last box. Link another box or enlarge a box height.</div>' : '<div style="color:var(--good);font-size:12px;margin-bottom:6px;">✓ Text fits in the linked chain.</div>') : '<div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;">Not linked — the box grows with its text.</div>'}
+      <hr style="border-color:var(--border-soft);margin:8px 0;">
       <div class="cvws-field-row"><div class="field"><label>Page</label><select onchange="BookWorkspace.setTextBox('side',this.value)"><option value="left" ${tb.side==='left'?'selected':''}>Left page</option><option value="right" ${tb.side!=='left'?'selected':''}>Right page</option></select></div>
         <div class="field"><label>Align</label><select onchange="BookWorkspace.setTextBox('align',this.value)">${['left','center','right'].map(a=>`<option ${tb.align===a?'selected':''}>${a}</option>`).join('')}</select></div></div>
       <div class="field"><label>Typography style</label><select onchange="BookWorkspace.setTextBox('styleId',this.value)"><option value="">Custom</option>${styles.map(st=>`<option value="${st.id}" ${tb.styleId===st.id?'selected':''}>${escapeHtml(st.name)}</option>`).join('')}</select></div>
@@ -5559,13 +5692,37 @@ const BookWorkspace = {
   },
   selectTextBox(id){ BookWorkspace.sel = {kind:'text', id}; BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); },
   removeTextBox(id){
-    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
-    s.texts = BookWorkspace._texts(s).filter(t=>t.id!==id); BookWorkspace._syncText(s);
+    const p = currentProject(); const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s||!p) return;
+    const all = BookWorkspace._allBoxes(p), fm = BookWorkspace._flow(p); const me = all.find(o=>o.b.id===id); const touched = [s];
+    if(me){
+      const prev = all.find(o=>o.b.linkTo===id), nextId = me.b.linkTo, next = nextId && all.find(o=>o.b.id===nextId);
+      if(prev){ prev.b.linkTo = next ? nextId : null; touched.push(prev.s); }       // splice the chain
+      else if(next){ const inf = fm.get(nextId); next.b.text = inf ? inf.input : (next.b.text||''); touched.push(next.s); } // next becomes the first box
+    }
+    s.texts = BookWorkspace._texts(s).filter(t=>t.id!==id);
     if(BookWorkspace.sel && BookWorkspace.sel.id===id) BookWorkspace.sel = null;
-    DB.put('spreads',s); BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks(); BookWorkspace.renderPacingStrip();
+    BookWorkspace._persist(touched); BookWorkspace._refreshAll();
   },
 
   /* ---- Spread canvas with print guides ---- */
+  _paintBg(ctx,s,W,H){
+    if(s.bgLeft){ ctx.fillStyle = s.bgLeft; ctx.fillRect(0,0,Math.ceil(W/2),H); }
+    if(s.bgRight){ ctx.fillStyle = s.bgRight; ctx.fillRect(Math.floor(W/2),0,W-Math.floor(W/2),H); }
+  },
+  _bgSide:'both',
+  setBgSide(v){ BookWorkspace._bgSide = v; },
+  setBg(color){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s){ toast('Select a spread first.'); return; }
+    const side = BookWorkspace._bgSide;
+    if(side==='both'||side==='left') s.bgLeft = color; if(side==='both'||side==='right') s.bgRight = color;
+    BookWorkspace._saveSpreadSoon(s); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderImagesPanel();
+  },
+  clearBg(){
+    const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s) return;
+    const side = BookWorkspace._bgSide;
+    if(side==='both'||side==='left') s.bgLeft = null; if(side==='both'||side==='right') s.bgRight = null;
+    BookWorkspace._saveSpreadSoon(s); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderImagesPanel();
+  },
   uploadSpreadArt(file){
     if(!file) return;
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s){ toast('Select or create a spread first.'); return; }
@@ -5597,11 +5754,12 @@ const BookWorkspace = {
     const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId);
     const dimsLbl = document.getElementById('bkwsDims');
     if(dimsLbl) dimsLbl.textContent = s ? `#${s.spreadIndex} · ${(spreadW+2*bleed).toFixed(2)}"×${(spreadH+2*bleed).toFixed(2)}" w/ bleed` : '';
+    if(s) BookWorkspace._paintBg(ctx,s,canvas.width,canvas.height);
     if(s && s.imageData){
       if(artImg) ctx.drawImage(artImg,0,0,canvas.width,canvas.height);
-    } else {
+    } else if(!(s && (s.bgLeft||s.bgRight))){
       ctx.fillStyle = '#666'; ctx.font = '16px monospace'; ctx.textAlign = 'center';
-      ctx.fillText(s ? 'No art uploaded for this spread' : 'Select a spread', canvas.width/2, canvas.height/2);
+      ctx.fillText(s ? 'No art — upload art, or pick a page color in the Images tab' : 'Select a spread', canvas.width/2, canvas.height/2);
     }
     const guides = p.bookGuides || {bleed:true,trim:true,safety:true,gutter:true,cmyk:false};
     const bleedPx = bleed*PPI;
@@ -5675,6 +5833,7 @@ const BookWorkspace = {
     const guides = p.bookGuides || {};
     wrap.innerHTML = `
       ${dpiRow}
+      ${(()=>{ const fm = BookWorkspace._flow(p); const bad = [...fm.values()].filter(i=>i.overflow).length; return fm.size ? `<div class="bkws-preflight-row"><span>Linked text</span><span class="${bad?'bad':'ok'}">${bad?('✗ '+bad+' chain'+(bad===1?'':'s')+' overflow'):'✓ fits'}</span></div>` : ''; })()}
       <div class="bkws-preflight-row"><span>CMYK Preview</span><span>${guides.cmyk?'<span class="ok">ON</span>':'off'}</span></div>
       <div class="bkws-preflight-row"><span>Trim (per page)</span><span>${trimW}"×${trimH}"</span></div>
       <div class="bkws-preflight-row"><span>Spread w/ bleed</span><span>${(trimW*2+2*bleed).toFixed(2)}"×${(trimH+2*bleed).toFixed(2)}"</span></div>
@@ -5760,7 +5919,7 @@ const BookWorkspace = {
       const words = (s.text||'').split(/\s+/).filter(Boolean).length;
       const density = words>80 ? '#c26b5f' : words>30 ? '#c9a15a' : '#7fae7a';
       return `<div class="bkws-pacing-item ${s.id===BookWorkspace.activeSpreadId?'active':''}" onclick="BookWorkspace.selectSpread('${s.id}')">
-        <div class="bkws-pacing-thumb">${s.imageData?`<img src="${s.imageData}">`:''}</div>
+        <div class="bkws-pacing-thumb" ${(!s.imageData&&(s.bgLeft||s.bgRight))?`style="background:linear-gradient(90deg,${s.bgLeft||'#222'} 50%,${s.bgRight||'#222'} 50%);"`:''}>${s.imageData?`<img src="${s.imageData}">`:''}</div>
         <div class="bkws-pacing-density" style="background:${density};"></div>
         <div class="lbl">#${s.spreadIndex}</div>
       </div>`;
@@ -5770,8 +5929,8 @@ const BookWorkspace = {
   /* ---- Interactive digital dummy ---- */
   openDigitalDummy(){
     const p = currentProject(); if(!p) return;
-    const spreads = projSpreads(p.id).filter(s=>s.imageData || (s.text||'').trim());
-    if(spreads.length===0){ toast('Upload art or add text to at least one spread first.'); return; }
+    const spreads = projSpreads(p.id).filter(s=>s.imageData || s.bgLeft || s.bgRight || (s.text||'').trim());
+    if(spreads.length===0){ toast('Upload art, pick a page color or add text to at least one spread first.'); return; }
     BookWorkspace._dummySpreads = spreads; BookWorkspace.dummyIndex = 0;
     document.getElementById('bkwsDummyBackdrop').style.display = 'flex';
     CanvasZoom.register('dummy',{el:'bkwsDummyImg', wrap:'bkwsDummyImgWrap', ctl:'bkwsDummyZoomCtl', events:['load']});
