@@ -5402,33 +5402,56 @@ const BookWorkspace = {
     for(let i=0;i+1<xs.length;i+=2) out.push([xs[i],xs[i+1]]);
     return out;
   },
-  _slotSpan(poly,k,lh,fh){      // usable horizontal range [u0,u1] (fractions of frame width) for text line slot k
-    const v0 = k*lh/fh, v1 = (k+1)*lh/fh; if(v1>1.0001) return null;
-    if(!poly) return [0,1];
-    const sc = BookWorkspace._spansAt(poly,(v0+v1)/2); if(!sc.length) return null;
-    let best = sc.reduce((m,x)=>((x[1]-x[0])>(m[1]-m[0])?x:m));
-    for(const v of [v0+(v1-v0)*.12, v1-(v1-v0)*.12]){
-      let ov = null; BookWorkspace._spansAt(poly,v).forEach(x=>{ const lo = Math.max(x[0],best[0]), hi = Math.min(x[1],best[1]); if(hi>lo && (!ov || hi-lo>ov[1]-ov[0])) ov = [lo,hi]; });
-      if(!ov) return null; best = ov;
+  _isect(A,B){ const out = []; A.forEach(x=>B.forEach(y=>{ const lo = Math.max(x[0],y[0]), hi = Math.min(x[1],y[1]); if(hi>lo) out.push([lo,hi]); })); return out.sort((m,n)=>m[0]-n[0]); },
+  _subtract(spans,ob){ const out = []; spans.forEach(sp=>{ if(ob[1]<=sp[0] || ob[0]>=sp[1]){ out.push(sp); return; } if(ob[0]-sp[0]>0) out.push([sp[0],ob[0]]); if(sp[1]-ob[1]>0) out.push([ob[1],sp[1]]); }); return out; },
+  _slotSpans(poly,k,lh,fh,obs){   // usable horizontal ranges for text line slot k (shape interior minus wrapped images)
+    const v0 = k*lh/fh, v1 = (k+1)*lh/fh; if(v1>1.0001) return [];
+    let spans = [[0,1]];
+    if(poly){
+      spans = null;
+      for(const v of [(v0+v1)/2, v0+(v1-v0)*.12, v1-(v1-v0)*.12]){ const ss = BookWorkspace._spansAt(poly,v); spans = spans ? BookWorkspace._isect(spans,ss) : ss; if(!spans.length) return []; }
     }
-    return best;
+    (obs||[]).forEach(o=>{ if(o.v1>v0 && o.v0<v1) spans = BookWorkspace._subtract(spans,[o.u0,o.u1]); });
+    return spans;
   },
-  _layout(ctx,text,o){          // fill a frame (rectangle or shape) line by line; returns the lines and any leftover text
+  _layout(ctx,text,o){          // fill a frame (rectangle or shape, around wrapped images) line by line; returns the lines and any leftover text
     const paras = String(text||'').split('\n').map(x=>x.trim().length ? x.trim().split(/\s+/) : []);
     let pi = 0, wi = 0; const lines = [];
     for(let k=0; k<o.maxSlots && pi<paras.length; k++){
-      const sp = BookWorkspace._slotSpan(o.poly,k,o.lh,o.fh); if(!sp) continue;
-      const W = (sp[1]-sp[0])*o.fw; if(W < o.px*1.2) continue;
-      const para = paras[pi];
-      if(!para.length){ if(lines.length) lines.push({t:'',u0:sp[0],u1:sp[1],k}); pi++; wi = 0; continue; }
-      let line = '';
-      while(wi<para.length){ const test = line ? line+' '+para[wi] : para[wi]; if(line && ctx.measureText(test).width>W) break; line = test; wi++; }
-      lines.push({t:line,u0:sp[0],u1:sp[1],k});
-      if(wi>=para.length){ pi++; wi = 0; }
+      const spans = BookWorkspace._slotSpans(o.poly,k,o.lh,o.fh,o.obs); if(!spans.length) continue;
+      for(const sp of spans){
+        if(pi>=paras.length) break;
+        const W = (sp[1]-sp[0])*o.fw; if(W < o.px*1.6) continue;
+        const para = paras[pi];
+        if(!para.length){ if(lines.length) lines.push({t:'',u0:sp[0],u1:sp[1],k}); pi++; wi = 0; continue; }
+        let line = '';
+        while(wi<para.length){ const test = line ? line+' '+para[wi] : para[wi]; if(line && ctx.measureText(test).width>W) break; line = test; wi++; }
+        lines.push({t:line,u0:sp[0],u1:sp[1],k});
+        if(wi>=para.length){ pi++; wi = 0; }
+      }
     }
     let rest = '';
     if(pi<paras.length){ rest = [paras[pi].slice(wi).join(' ')].concat(paras.slice(pi+1).map(x=>x.join(' '))).join('\n'); }
     return {lines, rest, overflow: rest.trim().length>0};
+  },
+  _obstacles(p,sp,tb,REF,trimW,trimH){     // wrapped images on this spread, converted into the text frame's local 0..1 space
+    const out = []; const wl = (sp.layers||[]).filter(l=>l.wrap && l.wrap!=='none'); if(!wl.length) return out;
+    const bp = 0.125*REF, pwP = trimW*REF, phP = trimH*REF, pwF = trimW*2*REF;
+    const fw = (tb.w/100)*pwP, fh = ((tb.h||38)/100)*phP, cx = bp+(tb.side==='left'?0:pwP)+(tb.x/100)*pwP, cy = bp+(tb.y/100)*phP;
+    const rt = -(tb.rot||0)*Math.PI/180, ct = Math.cos(rt), st = Math.sin(rt);
+    wl.forEach(l=>{
+      const w = (l.w/100)*pwF, h = w*(l.asp||1)*(l.sy||1), a = (l.rot||0)*Math.PI/180, lx = bp+(l.x/100)*pwF, ly = bp+(l.y/100)*phP, pad = (l.wrapPad==null?8:l.wrapPad)*REF/72;
+      const bw = Math.abs(w*Math.cos(a))+Math.abs(h*Math.sin(a))+pad*2, bh = Math.abs(w*Math.sin(a))+Math.abs(h*Math.cos(a))+pad*2;
+      let u0=1e9,u1=-1e9,v0=1e9,v1=-1e9;
+      [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([i,j])=>{ const gx = lx+i*bw/2-cx, gy = ly+j*bh/2-cy, X = gx*ct-gy*st, Y = gx*st+gy*ct; u0=Math.min(u0,X); u1=Math.max(u1,X); v0=Math.min(v0,Y); v1=Math.max(v1,Y); });
+      const o = {u0:(u0+fw/2)/fw, u1:(u1+fw/2)/fw, v0:(v0+fh/2)/fh, v1:(v1+fh/2)/fh};
+      if(o.u1<=0 || o.u0>=1 || o.v1<=0 || o.v0>=1) return;
+      if(l.wrap==='jump'){ o.u0 = 0; o.u1 = 1; }
+      else if(l.wrapSide==='left'){ o.u1 = 1; }      // text only on the left of the image
+      else if(l.wrapSide==='right'){ o.u0 = 0; }     // text only on the right of the image
+      out.push(o);
+    });
+    return out;
   },
   _flow(p){
     const all = BookWorkspace._allBoxes(p), byId = new Map(all.map(o=>[o.b.id,o]));
@@ -5446,7 +5469,7 @@ const BookWorkspace = {
         const fam = st ? st.fontFamily : BookWorkspace._fontFam(tb.font); const size = st ? (st.size||16) : tb.size;
         const px = size*REF/72, lh = px*(tb.lh||1.4), fw = (tb.w/100)*trimW*REF, fh = ((tb.h||38)/100)*trimH*REF;
         ctx.font = `${px}px ${fam}, Georgia, serif`;
-        const L = BookWorkspace._layout(ctx,input,{px,lh,fw,fh,poly:BookWorkspace._shapeFlat(tb.shape),maxSlots:Math.max(1,Math.floor(fh/lh))});
+        const L = BookWorkspace._layout(ctx,input,{px,lh,fw,fh,poly:BookWorkspace._shapeFlat(tb.shape),obs:BookWorkspace._obstacles(p,cur.s,tb,REF,trimW,trimH),maxSlots:Math.max(1,Math.floor(fh/lh))});
         const next = hasNext(tb) ? byId.get(tb.linkTo) : null;
         map.set(tb.id, {lines:L.lines, input, hasNext:!!next, hasPrev:!first, overflow:!next && L.overflow});
         input = L.rest; cur = next; first = false;
@@ -5626,7 +5649,8 @@ const BookWorkspace = {
       if(pt.ox||pt.oy) parts.push(['out',P(pt.x+pt.ox,pt.y+pt.oy)]);
       parts.forEach(([n,q])=>{ ctx.strokeStyle='rgba(255,170,60,.9)'; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(q.x,q.y); ctx.stroke(); ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(q.x,q.y,ps*.28,0,Math.PI*2); ctx.fill();
         hits.push({kind:'anchor',part:n,idx:i,id:tb.id,x:q.x-ps*.7,y:q.y-ps*.7,w:ps*1.4,h:ps*1.4,frame:fr}); });
-      ctx.fillStyle='#ff9d00'; ctx.strokeStyle='#5a3300'; ctx.fillRect(a.x-ps*.32,a.y-ps*.32,ps*.64,ps*.64); ctx.strokeRect(a.x-ps*.32,a.y-ps*.32,ps*.64,ps*.64);
+      const asel = BookWorkspace._anchorSel && BookWorkspace._anchorSel.id===tb.id && BookWorkspace._anchorSel.idx===i;
+      ctx.fillStyle = asel ? '#ffffff' : '#ff9d00'; ctx.strokeStyle = asel ? '#d35400' : '#5a3300'; ctx.fillRect(a.x-ps*.32,a.y-ps*.32,ps*.64,ps*.64); ctx.strokeRect(a.x-ps*.32,a.y-ps*.32,ps*.64,ps*.64);
       hits.push({kind:'anchor',part:'pt',idx:i,id:tb.id,x:a.x-ps*.7,y:a.y-ps*.7,w:ps*1.4,h:ps*1.4,frame:fr});
     });
     ctx.restore();
@@ -5849,6 +5873,7 @@ const BookWorkspace = {
       if(h && (h.kind==='handle' || h.kind==='anchor')){
         const s0 = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s0) return;
         const tg = h.kind==='anchor' || h.itemKind==='text' ? BookWorkspace._texts(s0).find(t=>t.id===h.id) : (s0.layers||[]).find(l=>l.id===h.id); if(!tg) return;
+        if(h.kind==='anchor') BookWorkspace._anchorSel = {id:h.id, idx:h.idx};
         BookWorkspace._drag = {s:s0, h, target:tg, start:q, mode:h.kind==='anchor'?'anchor':'xf', fr0:Object.assign({},h.frame), shape0: h.kind==='anchor' ? JSON.parse(JSON.stringify(tg.shape)) : null};
         try{ c.setPointerCapture(e.pointerId); }catch(err){} return;
       }
@@ -5858,7 +5883,7 @@ const BookWorkspace = {
       if(h.kind==='text'){ target = BookWorkspace._texts(s).find(t=>t.id===h.id); }
       else target = (s.layers||[]).find(l=>l.id===h.id);
       if(!target) return;
-      BookWorkspace.sel = {kind:h.kind, id:h.id};
+      BookWorkspace.sel = {kind:h.kind, id:h.id}; if(h.kind==='text') BookWorkspace._lastTextSel = h.id;
       BookWorkspace._drag = {s, h, target, start:q, ox:target.x, oy:target.y};
       try{ c.setPointerCapture(e.pointerId); }catch(err){}
       c.style.cursor = 'grabbing';
@@ -5878,6 +5903,33 @@ const BookWorkspace = {
     });
     const end = ()=>{ const d = BookWorkspace._drag; if(!d) return; BookWorkspace._drag = null; c.style.cursor='default'; DB.put('spreads', d.s); if(d.mode==='xf' || d.mode==='anchor'){ if(BookWorkspace.sel && BookWorkspace.sel.kind==='layer') BookWorkspace.renderImagesPanel(); else BookWorkspace.renderTextPanel(); BookWorkspace.renderPreflight(); } };
     c.addEventListener('pointerup',end); c.addEventListener('pointercancel',end);
+    c.addEventListener('dblclick',e=>{ if(BookWorkspace._pen) return; const h = hitAt(pt(e)); if(h && h.kind==='anchor' && h.part==='pt'){ BookWorkspace._anchorSel = {id:h.id, idx:h.idx}; BookWorkspace.togglePointType(); } });
+  },
+  _anchorBox(){ const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const a = BookWorkspace._anchorSel; const tb = sp && a && BookWorkspace._texts(sp).find(t=>t.id===a.id); return (tb && tb.shape && tb.shape[a.idx]) ? {sp,tb,pt:tb.shape[a.idx],idx:a.idx} : null; },
+  _smoothen(tb,idx){
+    const p = currentProject(), cm = (p&&p.coverMeta)||{}; const fw = (tb.w/100)*(parseFloat(cm.trimW)||8.5), fh = ((tb.h||38)/100)*(parseFloat(cm.trimH)||8.5);
+    const n = tb.shape.length, pt = tb.shape[idx], pr = tb.shape[(idx+n-1)%n], nx = tb.shape[(idx+1)%n];
+    let tx = (nx.x-pr.x)*fw, ty = (nx.y-pr.y)*fh; const tl = Math.hypot(tx,ty)||1; tx /= tl; ty /= tl;
+    const dp = Math.hypot((pt.x-pr.x)*fw,(pt.y-pr.y)*fh), dn = Math.hypot((nx.x-pt.x)*fw,(nx.y-pt.y)*fh);
+    pt.ox = tx*dn/3/fw; pt.oy = ty*dn/3/fh; pt.ix = -tx*dp/3/fw; pt.iy = -ty*dp/3/fh;
+  },
+  _setPointType(tb,idx,type){ const pt = tb.shape[idx]; if(type==='corner'){ pt.ix = pt.iy = pt.ox = pt.oy = 0; } else BookWorkspace._smoothen(tb,idx); },
+  togglePointType(){
+    const a = BookWorkspace._anchorBox(); if(!a){ toast('Click a point on the shape first.'); return; }
+    const isCurve = !!(a.pt.ix||a.pt.iy||a.pt.ox||a.pt.oy);
+    BookWorkspace._setPointType(a.tb,a.idx,isCurve?'corner':'smooth'); BookWorkspace._persist([a.sp]); BookWorkspace._refreshAll();
+  },
+  setPointType(type){
+    const a = BookWorkspace._anchorBox(); if(!a){ toast('Click a point on the shape first.'); return; }
+    BookWorkspace._setPointType(a.tb,a.idx,type); BookWorkspace._persist([a.sp]); BookWorkspace._refreshAll();
+  },
+  setAllPointTypes(type){
+    const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const tb = sp && BookWorkspace._selBox(sp); if(!tb||!tb.shape) return;
+    tb.shape.forEach((_,i)=>BookWorkspace._setPointType(tb,i,type)); BookWorkspace._persist([sp]); BookWorkspace._refreshAll();
+  },
+  deletePoint(){
+    const a = BookWorkspace._anchorBox(); if(!a) return; if(a.tb.shape.length<=3){ toast('A shape needs at least 3 points.'); return; }
+    a.tb.shape.splice(a.idx,1); BookWorkspace._anchorSel = null; BookWorkspace._persist([a.sp]); BookWorkspace._refreshAll();
   },
   async _layerImgs(s){
     const out = {}; if(!s) return out;
@@ -5888,6 +5940,7 @@ const BookWorkspace = {
     const bp = bleed*PPI, pw = trimW*2*PPI, ph = trimH*PPI;
     (s.layers||[]).forEach(l=>{
       const im = imgs[l.id]; if(!im) return;
+      l.asp = im.height/im.width;
       const w = (l.w/100)*pw, h = w*im.height/im.width*(l.sy||1), cx = bp+(l.x/100)*pw, cy = bp+(l.y/100)*ph, a = (l.rot||0)*Math.PI/180;
       ctx.save(); ctx.globalAlpha = l.opacity==null?1:l.opacity; ctx.translate(cx,cy); ctx.rotate(a); if(l.flip) ctx.scale(-1,1); ctx.drawImage(im,-w/2,-h/2,w,h); ctx.restore();
       if(hits){ const frame = {cx,cy,w,h,rot:a,asp:im.height/im.width}; hits.push(Object.assign({kind:'layer', id:l.id, frame, ox:bp, oy:bp, pw, ph}, BookWorkspace._aabb(frame))); }
@@ -5929,13 +5982,57 @@ const BookWorkspace = {
         <div class="cvws-field-row">${num('w','Width %',2,200,1)}${num('rot','Rotate °',-180,180,1)}</div>
         <div class="cvws-field-row">${num('opacity','Opacity (0–1)',0,1,.05)}${num('sy','Stretch Y (1 = normal)',.1,5,.05)}</div>
         <button class="btn btn-sm" onclick="BookWorkspace.resetLayerTransform()">Reset rotation &amp; stretch</button>
+        <div class="ws2d-panel-head" style="padding-left:0;border:none;margin-top:10px;">Place with the text</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Snap this image into the text frame and make the words wrap around it.</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">
+          ${[['left','◧ Float left'],['right','◨ Float right'],['top','⬒ Above text'],['center','⬍ In line (centre)'],['bottom','⬓ Below text']].map(([k,l])=>`<button class="btn btn-sm" onclick="BookWorkspace.placeLayer('${k}')">${l}</button>`).join('')}</div>
+        <div class="cvws-field-row"><div class="field"><label>Text wrap</label><select onchange="BookWorkspace.setLayerWrap('wrap',this.value)"><option value="none" ${(sel.wrap||'none')==='none'?'selected':''}>None (text runs over it)</option><option value="around" ${sel.wrap==='around'?'selected':''}>Wrap around image</option><option value="jump" ${sel.wrap==='jump'?'selected':''}>Jump (text above &amp; below)</option></select></div>
+          <div class="field"><label>Text sits</label><select onchange="BookWorkspace.setLayerWrap('wrapSide',this.value)"><option value="both" ${(sel.wrapSide||'both')==='both'?'selected':''}>Both sides</option><option value="left" ${sel.wrapSide==='left'?'selected':''}>Left of image</option><option value="right" ${sel.wrapSide==='right'?'selected':''}>Right of image</option></select></div></div>
+        <div class="field"><label>Gap around image (pt)</label><input type="number" min="0" max="80" step="1" value="${sel.wrapPad==null?8:sel.wrapPad}" oninput="BookWorkspace.setLayerWrap('wrapPad',parseFloat(this.value)||0)"></div>
+        <div style="font-size:10.5px;color:var(--text-faint);">Wrapping works on fixed-size text frames — plain text boxes on this spread are switched to fixed frames automatically.</div>
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px;"><input type="checkbox" ${sel.flip?'checked':''} onchange="BookWorkspace.setLayer('flip',this.checked)"> Flip horizontally</label></div>` : ''}`;
   },
   async addLayer(file){
     if(!file) return; const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s){ toast('Select a spread first.'); return; }
-    const l = {id:uid(), name:file.name, img:await CoverWorkspace._readFile(file), x:50, y:50, w:30, rot:0, opacity:1, flip:false};
+    const l = {id:uid(), name:file.name, img:await CoverWorkspace._readFile(file), x:50, y:50, w:30, rot:0, opacity:1, flip:false, wrap:'none', wrapSide:'both', wrapPad:8};
+    try{ const im = await BookWorkspace._img(l.img); l.asp = im.height/im.width; }catch(e){}
     s.layers = (s.layers||[]).concat([l]); BookWorkspace.sel = {kind:'layer', id:l.id};
     await DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas();
+  },
+  _fixPlainBoxes(sp){      // text wrap needs a frame: freeze auto-height boxes at their current size
+    const p = currentProject(); const grown = [];
+    BookWorkspace._texts(sp).forEach(b=>{ if(!b.fixed && !b.shape){ const hh = (BookWorkspace._hits||[]).find(h=>h.kind==='text'&&h.id===b.id); if(hh && hh.frame){ b.h = Math.max(5,Math.round(hh.frame.h/hh.ph*100)); } b.fixed = true; grown.push(b); } });
+    // the wrapped text needs more room than it had — give those frames height until it fits (never past the page)
+    grown.forEach(b=>{ for(let i=0;i<30;i++){ const inf = BookWorkspace._flow(p).get(b.id); if(!inf || !inf.overflow || (b.h||38)>=96) break; b.h = Math.min(96,(b.h||38)+3); } b.y = Math.max((b.h||38)/2, Math.min(100-(b.h||38)/2, b.y)); });
+  },
+  setLayerWrap(key,val){
+    const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const l = sp && BookWorkspace.sel && (sp.layers||[]).find(x=>x.id===BookWorkspace.sel.id); if(!l) return;
+    l[key] = val; if(key==='wrap' && val!=='none') BookWorkspace._fixPlainBoxes(sp);
+    DB.put('spreads',sp); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight(); if(key==='wrap') BookWorkspace.renderImagesPanel();
+  },
+  placeLayer(mode){
+    const p = currentProject(); const sp = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const l = sp && BookWorkspace.sel && (sp.layers||[]).find(x=>x.id===BookWorkspace.sel.id); if(!l) return;
+    const boxes = BookWorkspace._texts(sp); if(!boxes.length){ toast('Add a text box on this spread first — the image snaps into its frame.'); return; }
+    const hl = (BookWorkspace._hits||[]).find(h=>h.kind==='layer'&&h.id===l.id);
+    const th = BookWorkspace._hits.filter(h=>h.kind==='text');
+    let target = th.find(h=>BookWorkspace.sel && false); 
+    const lastText = BookWorkspace._lastTextSel && th.find(h=>h.id===BookWorkspace._lastTextSel);
+    target = lastText || th.map(h=>{ const ox = Math.max(0,Math.min(h.x+h.w,hl.x+hl.w)-Math.max(h.x,hl.x)), oy = Math.max(0,Math.min(h.y+h.h,hl.y+hl.h)-Math.max(h.y,hl.y)); return {h,a:ox*oy}; }).sort((m,n)=>n.a-m.a)[0].h;
+    const fr = target.frame, pwF = hl.pw, ph = hl.ph, bp = hl.ox;
+    const asp = l.asp || (hl.frame.asp) || 1; let w = (l.w/100)*pwF;
+    if((mode==='left'||mode==='right') && w>fr.w*.45){ w = fr.w*.45; l.w = w/pwF*100; }
+    if((mode==='top'||mode==='bottom'||mode==='center') && w>fr.w*.9){ w = fr.w*.9; l.w = w/pwF*100; }
+    const h = w*asp*(l.sy||1), gap = (l.wrapPad==null?8:l.wrapPad)*90/72*0;
+    let cx = fr.cx, cy = fr.cy;
+    if(mode==='left'){ cx = fr.cx-fr.w/2+w/2; cy = fr.cy-fr.h/2+h/2; l.wrap='around'; l.wrapSide='right'; }
+    else if(mode==='right'){ cx = fr.cx+fr.w/2-w/2; cy = fr.cy-fr.h/2+h/2; l.wrap='around'; l.wrapSide='left'; }
+    else if(mode==='top'){ cx = fr.cx; cy = fr.cy-fr.h/2+h/2; l.wrap='jump'; }
+    else if(mode==='bottom'){ cx = fr.cx; cy = fr.cy+fr.h/2-h/2; l.wrap='jump'; }
+    else { cx = fr.cx; cy = fr.cy; l.wrap='jump'; }
+    l.rot = 0; l.x = (cx-bp)/pwF*100; l.y = (cy-bp)/ph*100;
+    BookWorkspace._fixPlainBoxes(sp); DB.put('spreads',sp);
+    BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPreflight();
+    toast(mode==='left'||mode==='right' ? 'Image placed in the text frame — words wrap around it.' : 'Image placed in the text frame — text runs above and below it.');
   },
   resetLayerTransform(){ const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); const l = s && BookWorkspace.sel && (s.layers||[]).find(x=>x.id===BookWorkspace.sel.id); if(!l) return; l.rot = 0; l.sy = 1; DB.put('spreads',s); BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); },
   selectLayer(id){ BookWorkspace.sel = {kind:'layer', id}; BookWorkspace.renderImagesPanel(); BookWorkspace.drawCanvas(); },
@@ -5999,6 +6096,10 @@ const BookWorkspace = {
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Make the text frame any shape — text flows inside it. Draw your own with the pen, or start from a preset.</div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;"><button class="btn btn-sm btn-gold" onclick="BookWorkspace.startPen('${tb.id}')">✒ Draw shape (pen)</button>
         ${[['rect','▭ Rectangle'],['ellipse','◯ Ellipse'],['diamond','◇ Diamond'],['triangle','△ Triangle'],['trapezoid','⏢ Trapezoid'],['bubble','💬 Bubble']].map(([k,l])=>`<button class="btn btn-sm" onclick="BookWorkspace.setShapePreset('${k}')">${l}</button>`).join('')}</div>
+      ${tb.shape ? (()=>{ const ab = BookWorkspace._anchorBox(); const isC = ab && (ab.pt.ix||ab.pt.iy||ab.pt.ox||ab.pt.oy);
+        return `<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">${ab?`Point ${ab.idx+1} selected — currently a <b>${isC?'smooth curve':'sharp corner'}</b>.`:'Click an orange point on the canvas to select it (double-click toggles curve ⇄ corner).'}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;"><button class="btn btn-sm" ${ab?'':'disabled'} onclick="BookWorkspace.setPointType('corner')">◇ Curve → sharp corner</button><button class="btn btn-sm" ${ab?'':'disabled'} onclick="BookWorkspace.setPointType('smooth')">◠ Corner → smooth curve</button><button class="btn btn-sm btn-danger" ${ab?'':'disabled'} onclick="BookWorkspace.deletePoint()">Delete point</button></div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;"><button class="btn btn-sm" onclick="BookWorkspace.setAllPointTypes('corner')">All points → corners</button><button class="btn btn-sm" onclick="BookWorkspace.setAllPointTypes('smooth')">All points → curves</button></div>`; })() : ''}
       <div class="cvws-field-row"><div class="field"><label>Frame fill</label><div style="display:flex;gap:4px;"><input type="color" value="${tb.shapeFill||'#ffffff'}" onchange="BookWorkspace.setFrameStyle('shapeFill',this.value); BookWorkspace.renderTextPanel();"><button class="btn btn-sm" onclick="BookWorkspace.setFrameStyle('shapeFill',''); BookWorkspace.renderTextPanel();">None</button></div></div>
         <div class="field"><label>Frame outline</label><div style="display:flex;gap:4px;"><input type="color" value="${tb.shapeStroke||'#000000'}" onchange="BookWorkspace.setFrameStyle('shapeStroke',this.value); BookWorkspace.renderTextPanel();"><button class="btn btn-sm" onclick="BookWorkspace.setFrameStyle('shapeStroke',''); BookWorkspace.renderTextPanel();">None</button></div></div></div>
       ${tb.shapeStroke?`<div class="field"><label>Outline width (pt)</label><input type="number" min=".25" max="20" step=".25" value="${tb.shapeStrokeW||1.5}" oninput="BookWorkspace.setFrameStyle('shapeStrokeW',parseFloat(this.value)||1.5)"></div>`:''}
@@ -6030,7 +6131,7 @@ const BookWorkspace = {
     BookWorkspace._newBox(s,'New text'); DB.put('spreads',s);
     BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); BookWorkspace.renderPageTree(); BookWorkspace.renderRatio(); BookWorkspace.renderChunks();
   },
-  selectTextBox(id){ BookWorkspace.sel = {kind:'text', id}; BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); },
+  selectTextBox(id){ BookWorkspace._lastTextSel = id; BookWorkspace.sel = {kind:'text', id}; BookWorkspace.renderTextPanel(); BookWorkspace.drawCanvas(); },
   removeTextBox(id){
     const p = currentProject(); const s = State.spreads.find(x=>x.id===BookWorkspace.activeSpreadId); if(!s||!p) return;
     const all = BookWorkspace._allBoxes(p), fm = BookWorkspace._flow(p); const me = all.find(o=>o.b.id===id); const touched = [s];
