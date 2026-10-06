@@ -447,10 +447,22 @@ tr:hover .row-actions{opacity:1;}
 .cvws-field-row .field{flex:1;}
 .cvws-layer-row{display:flex;align-items:center;gap:7px;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--border-soft);}
 .cvws-layer-row:last-child{border-bottom:none;}
-.cvws-mock3d-stage{perspective:1000px;display:flex;align-items:center;justify-content:center;padding:20px 0;height:220px;}
-.cvws-mock3d-book{position:relative;width:130px;height:180px;transform-style:preserve-3d;transition:transform .15s linear;}
-.cvws-mock3d-face{position:absolute;top:0;left:0;width:130px;height:180px;background-size:cover;background-position:center;border:1px solid rgba(255,255,255,.08);background-color:#222;}
-.cvws-mock3d-spine{width:26px;left:130px;transform-origin:left center;transform:rotateY(90deg);}
+.cvws-mock3d-stage{perspective:900px;display:flex;align-items:center;justify-content:center;height:300px;position:relative;cursor:grab;touch-action:none;user-select:none;}
+.cvws-mock3d-book{position:relative;transform-style:preserve-3d;}
+.cvws-mock3d-book .mf{position:absolute;top:0;left:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background-size:100% 100%;background-color:#2a2a2a;overflow:hidden;}
+.cvws-mock3d-book .mf-front::after,.cvws-mock3d-book .mf-back::after,.cvws-mock3d-book.spined .mf-spine::after{content:'';position:absolute;inset:0;pointer-events:none;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .25  0 0 0 0 .2  0 0 0 0 .15  0 0 0 .55 -.12'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),linear-gradient(115deg,rgba(255,255,255,.14),rgba(255,255,255,0) 45%,rgba(0,0,0,.12));}
+.cvws-mock3d-book.gloss .mf-front::after,.cvws-mock3d-book.gloss .mf-back::after{background:linear-gradient(115deg,rgba(255,255,255,.34),rgba(255,255,255,.04) 38%,rgba(255,255,255,.18) 52%,rgba(0,0,0,.1));}
+.cvws-mock3d-book .mf-front::before{content:'';position:absolute;top:0;bottom:0;left:0;width:5%;pointer-events:none;z-index:2;background:linear-gradient(90deg,rgba(0,0,0,.28),rgba(255,255,255,.07) 55%,rgba(0,0,0,0));}
+.cvws-mock3d-book .mf-spine{background-color:#3a342a;}
+.cvws-mock3d-book.stapled .mf-spine{background-image:linear-gradient(90deg,rgba(0,0,0,.35),rgba(255,255,255,.18),rgba(0,0,0,.3));}
+.cvws-staple{position:absolute;left:-1px;right:-1px;height:14px;border-radius:1px;background:linear-gradient(90deg,#7d8794,#f4f7fa 50%,#6a7380);box-shadow:0 0 2px rgba(0,0,0,.6);}
+.cvws-mock3d-book .mf-fore{background:repeating-linear-gradient(90deg,#f8f4ea 0 1px,#d8d1bf 1px 1.8px);}
+.cvws-mock3d-book .mf-top{background:repeating-linear-gradient(0deg,#fbf8f0 0 1px,#dcd5c4 1px 1.8px);}
+.cvws-mock3d-book .mf-bottom{background:repeating-linear-gradient(0deg,#c9c2b1 0 1px,#a9a291 1px 1.8px);}
+.cvws-mock3d-book.cream .mf-fore{background:repeating-linear-gradient(90deg,#f1e6c8 0 1px,#cdbf98 1px 1.8px);}
+.cvws-mock3d-book.cream .mf-top{background:repeating-linear-gradient(0deg,#f4ead0 0 1px,#d3c59f 1px 1.8px);}
+.cvws-mock3d-book.cream .mf-bottom{background:repeating-linear-gradient(0deg,#c2b58f 0 1px,#a29673 1px 1.8px);}
+.cvws-mock-shadow{position:absolute;bottom:6px;left:50%;width:190px;height:20px;margin-left:-95px;background:radial-gradient(ellipse at center,rgba(0,0,0,.45),rgba(0,0,0,0) 70%);pointer-events:none;}
 .cvws-ab-slider-wrap{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:6px;overflow:hidden;margin-bottom:8px;}
 .cvws-ab-slider-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;}
 .cvws-ab-img-b{clip-path:inset(0 0 0 var(--ab-pos,50%));}
@@ -1227,7 +1239,7 @@ tr:hover .row-actions{opacity:1;}
         <div class="cvws-root" id="cvwsRoot">
           <div class="cvws-body">
             <div class="cvws-left">
-              <div class="ws2d-panel-head">Jacket &amp; Layers</div>
+              <div class="tabs" id="cvwsLeftTabs" style="margin:6px 8px 0;flex-shrink:0;"></div>
               <div id="cvwsJacketWrap" class="cvws-scroll"></div>
             </div>
             <div class="cvws-center">
@@ -4336,73 +4348,482 @@ const CoverWorkspace = {
   EAN_R:['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'],
   EAN_PARITY:['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL'],
 
+  leftTab:'setup', sel:null, _drawToken:0, _hits:[], _mockTimer:null, _saveTimer:null, mockTilt:10, _fontsLoaded:{}, _drag:null,
+  FONTS:['Georgia','Times New Roman','Palatino Linotype','Garamond','Book Antiqua','Arial','Helvetica','Trebuchet MS','Verdana','Impact','Courier New','Brush Script MT','Copperplate','Papyrus','fantasy','cursive'],
+
   render(){
+    CoverWorkspace.ensureTexts();
     CoverWorkspace.renderJacket();
     CoverWorkspace.render3DMock();
     CoverWorkspace.renderAB();
     CoverWorkspace.renderBottom();
+    CoverWorkspace.wireCanvas();
   },
+
+  /* ---------- data helpers ---------- */
+  _newText(kind,p,over){
+    const base = {id:uid(), kind, part:'front', text:'New text', font:'Georgia', size:20, bold:false, italic:false, color:'#f4ead6', align:'center', x:50, y:50, w:80, lh:1.25, spacing:0, outline:false, outlineColor:'#000000', outlineW:2, shadow:false};
+    const name = (p && p.name) || 'Book Title';
+    const presets = {
+      title:{part:'front', text:name, size:30, bold:true, y:24, w:82},
+      author:{part:'front', text:'Author Name', size:16, color:'#c9a15a', y:89, w:80, spacing:2},
+      blurb:{part:'back', text:'Write your back-cover text here. Tell readers what the story is about and why they will love it.', size:11, align:'left', y:36, w:74, lh:1.5},
+      spine:{part:'spine', text:name, size:14, bold:true, y:50, w:80},
+      custom:{}
+    };
+    return Object.assign(base, presets[kind]||{}, over||{});
+  },
+  ensureTexts(){
+    const p = currentProject(); if(!p) return null;
+    p.coverMeta = p.coverMeta || {}; const cm = p.coverMeta;
+    if(!Array.isArray(cm.texts)){
+      cm.texts = [];
+      const t = cm.typo;
+      if(t && t.on!==false){
+        cm.texts.push(CoverWorkspace._newText('title',p,{text:t.title||p.name, size:Math.round((t.titleSize||34)*72/90), color:t.titleColor||'#f4ead6'}));
+        if(t.author) cm.texts.push(CoverWorkspace._newText('author',p,{text:t.author, color:t.authorColor||'#c9a15a'}));
+      } else cm.texts.push(CoverWorkspace._newText('title',p,{}));
+      DB.put('projects',p);
+    }
+    if(!Array.isArray(cm.pngLayers)) cm.pngLayers = [];
+    return cm;
+  },
+  _layerOf(sel){
+    const p = currentProject(); if(!p || !sel) return null; const cm = p.coverMeta||{};
+    if(sel.kind==='text') return (cm.texts||[]).find(t=>t.id===sel.id)||null;
+    if(sel.kind==='png') return (cm.pngLayers||[]).find(t=>t.id===sel.id)||null;
+    if(sel.kind==='photo') return cm.authorPhoto||null;
+    return null;
+  },
+  _saveSoon(){ clearTimeout(CoverWorkspace._saveTimer); CoverWorkspace._saveTimer = setTimeout(()=>{ const p=currentProject(); if(p) DB.put('projects',p); }, 300); },
+  _readFile(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); },
+
+  /* ---------- geometry (all in inches*PPI; "visible" rects exclude bleed so 50% = true centre of the cover) ---------- */
+  _geom(cm,PPI){
+    const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, pageCount = parseInt(cm.pageCount)||32;
+    const stock = CoverWorkspace.PAPER_STOCKS[cm.paperStockKey||'white_60'] || CoverWorkspace.PAPER_STOCKS.white_60;
+    const binding = cm.binding==='stapled' ? 'stapled' : 'spined';
+    const bleed = 0.125, spineIn = binding==='stapled' ? 0 : pageCount*stock.caliper;
+    const fullW = (trimW+bleed)*2+spineIn, fullH = trimH+bleed*2;
+    return { trimW, trimH, pageCount, stock, binding, bleed, spineIn, fullW, fullH, PPI,
+      W:Math.max(1,Math.round(fullW*PPI)), H:Math.max(1,Math.round(fullH*PPI)),
+      backW:(trimW+bleed)*PPI, spineW:spineIn*PPI, frontX:(trimW+bleed)*PPI+spineIn*PPI, bleedPx:bleed*PPI };
+  },
+  _vis(g,part){
+    const y = g.bleedPx, h = g.trimH*g.PPI;
+    if(part==='back') return {x:g.bleedPx, y, w:g.trimW*g.PPI, h};
+    if(part==='spine') return {x:g.backW, y, w:g.spineW, h};
+    return {x:g.frontX, y, w:g.trimW*g.PPI, h};
+  },
+  _img(src){
+    const cache = CoverWorkspace._imgCache;
+    if(cache[src]) return Promise.resolve(cache[src]);
+    if(Object.keys(cache).length>16) CoverWorkspace._imgCache = {};
+    return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ CoverWorkspace._imgCache[src]=img; res(img); }; img.onerror=rej; img.src=src; });
+  },
+  async _gather(cm){
+    const safe = async src=>{ if(!src) return null; try{ return await CoverWorkspace._img(src); }catch(e){ return null; } };
+    const out = { front:await safe(cm.frontImg), back:await safe(cm.backImg), spine:await safe(cm.spineImg), png:{}, photo:null };
+    for(const l of (cm.pngLayers||[])) out.png[l.id] = await safe(l.img);
+    out.photo = await safe(cm.authorPhoto && cm.authorPhoto.img);
+    return out;
+  },
+  async ensureFonts(cm){
+    for(const f of (cm.customFonts||[])){
+      const key = f.name+':'+f.data.length;
+      if(CoverWorkspace._fontsLoaded[key]) continue;
+      try{ const ff = new FontFace(f.name, `url(${f.data})`); await ff.load(); document.fonts.add(ff); CoverWorkspace._fontsLoaded[key]=true; }catch(e){ console.warn('Custom font failed', f.name, e); }
+    }
+  },
+  _fontCss(t,px){
+    const generic = ['fantasy','cursive','serif','sans-serif','monospace'];
+    const fam = generic.includes(t.font) ? t.font : `"${t.font}"`;
+    return `${t.italic?'italic ':''}${t.bold?'bold ':''}${px}px ${fam}, Georgia, serif`;
+  },
+
+  /* ---------- the one painter used by the flat view, the 3D mockup textures and the PDF export ---------- */
+  paint(ctx,g,imgs,cm,o){
+    o = o||{};
+    const {W,H,PPI,backW,spineW,frontX,bleedPx} = g, s = PPI/90;
+    const lv = cm.layerVis || {}; const on = k=>lv[k]!==false;
+    ctx.fillStyle = o.emptyFill || '#1a1a1a'; ctx.fillRect(0,0,W,H);
+    const drawPart = (x,w,img,label)=>{
+      if(w<=0) return;
+      if(on('artwork') && img){ ctx.drawImage(img,x,0,w,H); return; }
+      ctx.fillStyle = o.emptyFill || '#222'; ctx.fillRect(x,0,w,H);
+      if(o.placeholders){
+        ctx.strokeStyle = '#444'; ctx.strokeRect(x,0,w,H);
+        ctx.fillStyle = '#666'; ctx.font = `${13*s}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline='alphabetic';
+        ctx.save(); ctx.translate(x+w/2,H/2); if(label==='SPINE') ctx.rotate(Math.PI/2); ctx.fillText(label,0,0); ctx.restore();
+      }
+    };
+    drawPart(0,backW,imgs.back,'BACK'); drawPart(backW,spineW,imgs.spine,'SPINE'); drawPart(frontX,backW,imgs.front,'FRONT');
+    const hits = o.hits || null;
+
+    if(on('images')){
+      CoverWorkspace._drawPhoto(ctx,g,cm,imgs.photo,hits);
+      (cm.pngLayers||[]).forEach(l=>CoverWorkspace._drawPng(ctx,g,l,imgs.png[l.id],hits));
+    }
+    if(on('typography')) (cm.texts||[]).forEach(t=>CoverWorkspace._drawText(ctx,g,t,hits));
+
+    if(o.foil==='fx' && on('foil')){
+      (cm.foilRegions||[]).forEach(r=>{
+        const [ox,ow] = r.part==='back' ? [0,backW] : r.part==='spine' ? [backW,spineW] : [frontX,backW];
+        const rx = ox+(r.xPct/100)*ow, ry = (r.yPct/100)*H, rw = (r.wPct/100)*ow, rh = (r.hPct/100)*H;
+        if(rw<=0||rh<=0) return;
+        ctx.save(); ctx.beginPath(); ctx.rect(rx,ry,rw,rh); ctx.clip();
+        if(r.kind==='foil'){
+          const gr = ctx.createLinearGradient(rx,ry,rx+rw,ry+rh);
+          gr.addColorStop(0,'#b8862b'); gr.addColorStop(.35,'#fff1b8'); gr.addColorStop(.55,'#d9a441'); gr.addColorStop(.8,'#fff0b0'); gr.addColorStop(1,'#a8771f');
+          ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=.95; ctx.fillStyle=gr; ctx.fillRect(rx,ry,rw,rh);
+          ctx.globalCompositeOperation='soft-light'; ctx.fillRect(rx,ry,rw,rh);
+        } else {
+          const gr = ctx.createLinearGradient(rx,ry,rx+rw*.6,ry+rh);
+          gr.addColorStop(0,'rgba(255,255,255,.05)'); gr.addColorStop(.45,'rgba(255,255,255,.55)'); gr.addColorStop(.6,'rgba(255,255,255,.08)'); gr.addColorStop(1,'rgba(255,255,255,.3)');
+          ctx.globalCompositeOperation='screen'; ctx.fillStyle=gr; ctx.fillRect(rx,ry,rw,rh);
+        }
+        ctx.restore();
+      });
+    }
+
+    if(on('barcode') && cm.isbn){
+      const bc = CoverWorkspace.computeEAN13(cm.isbn);
+      if(bc){
+        const bx = (g.bleed+0.4)*PPI, by = H-(g.bleed+0.4+0.87)*PPI+2*s;
+        CoverWorkspace.drawBarcodeOnCanvas(ctx, bc, bx, by, 1.4*s, 60*s, s);
+      }
+    }
+
+    if(o.guides){
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,80,80,.85)'; ctx.setLineDash([6*s,5*s]); ctx.lineWidth = 1.5*s;
+      ctx.strokeRect(bleedPx,bleedPx,W-2*bleedPx,H-2*bleedPx);
+      if(spineW>0){ ctx.beginPath(); ctx.moveTo(backW,0); ctx.lineTo(backW,H); ctx.moveTo(frontX,0); ctx.lineTo(frontX,H); ctx.stroke(); }
+      else { ctx.beginPath(); ctx.moveTo(backW,0); ctx.lineTo(backW,H); ctx.stroke(); }
+      ctx.setLineDash([]); ctx.strokeStyle = 'rgba(111,163,201,.9)';
+      const sc = backW+spineW/2;
+      ctx.beginPath(); ctx.moveTo(sc,0); ctx.lineTo(sc,14*s); ctx.moveTo(sc,H-14*s); ctx.lineTo(sc,H); ctx.stroke();
+      ctx.restore();
+    }
+    if(o.foil==='overlay' && on('foil')){
+      (cm.foilRegions||[]).forEach(r=>{
+        const [ox,ow] = r.part==='back' ? [0,backW] : r.part==='spine' ? [backW,spineW] : [frontX,backW];
+        const rx = ox+(r.xPct/100)*ow, ry = (r.yPct/100)*H, rw = (r.wPct/100)*ow, rh = (r.hPct/100)*H;
+        ctx.save();
+        if(r.kind==='foil'){ ctx.fillStyle = 'rgba(224,189,119,.4)'; ctx.strokeStyle = 'rgba(224,189,119,.9)'; }
+        else { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.strokeStyle = 'rgba(255,255,255,.7)'; }
+        ctx.lineWidth = 1.5*s; ctx.fillRect(rx,ry,rw,rh); ctx.strokeRect(rx,ry,rw,rh);
+        ctx.font = `${10*s}px monospace`; ctx.fillStyle = '#fff'; ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.fillText(r.kind.toUpperCase(), rx+3*s, ry+12*s);
+        ctx.restore();
+      });
+    }
+    if(o.guides && CoverWorkspace.sel && hits){
+      const h = hits.find(h=>h.kind===CoverWorkspace.sel.kind && h.id===CoverWorkspace.sel.id);
+      if(h){ ctx.save(); ctx.strokeStyle='rgba(80,200,255,.95)'; ctx.setLineDash([5*s,3*s]); ctx.lineWidth=1.5*s; ctx.strokeRect(h.x-2*s,h.y-2*s,h.w+4*s,h.h+4*s); ctx.restore(); }
+    }
+  },
+  _wrap(ctx,text,maxW){
+    const out = [];
+    String(text||'').split('\n').forEach(para=>{
+      if(!para.trim()){ out.push(''); return; }
+      let line = '';
+      para.split(/\s+/).forEach(word=>{
+        const test = line ? line+' '+word : word;
+        if(line && ctx.measureText(test).width>maxW){ out.push(line); line = word; } else line = test;
+      });
+      out.push(line);
+    });
+    return out;
+  },
+  _drawText(ctx,g,t,hits){
+    const v = CoverWorkspace._vis(g,t.part); if(v.w<=0) return;
+    const rot = t.part==='spine';
+    const k = g.PPI/72, px = (t.size||16)*k;
+    const maxW = rot ? (t.w/100)*v.h : (t.w/100)*v.w;
+    ctx.save();
+    ctx.font = CoverWorkspace._fontCss(t,px);
+    if('letterSpacing' in ctx) ctx.letterSpacing = ((t.spacing||0)*k)+'px';
+    const lines = CoverWorkspace._wrap(ctx,t.text,maxW);
+    const lh = px*(t.lh||1.25), blockH = lines.length*lh;
+    const cx = v.x+(t.x/100)*v.w, cy = v.y+(t.y/100)*v.h;
+    ctx.translate(cx,cy); if(rot) ctx.rotate(Math.PI/2);
+    ctx.textBaseline = 'middle'; ctx.textAlign = t.align||'center';
+    const ax = t.align==='left' ? -maxW/2 : t.align==='right' ? maxW/2 : 0;
+    if(t.shadow){ ctx.shadowColor='rgba(0,0,0,.65)'; ctx.shadowBlur=px*.14; ctx.shadowOffsetX=px*.05; ctx.shadowOffsetY=px*.05; }
+    lines.forEach((ln,i)=>{
+      const y = -blockH/2+lh*(i+.5);
+      if(t.outline){ ctx.lineJoin='round'; ctx.lineWidth=(t.outlineW||2)*k; ctx.strokeStyle=t.outlineColor||'#000'; ctx.strokeText(ln,ax,y); }
+      ctx.fillStyle = t.color||'#fff'; ctx.fillText(ln,ax,y);
+    });
+    ctx.restore();
+    if(hits){ const bw = rot?blockH:maxW, bh = rot?maxW:blockH; hits.push({kind:'text', id:t.id, part:t.part, x:cx-bw/2, y:cy-bh/2, w:bw, h:bh}); }
+  },
+  _drawPng(ctx,g,l,img,hits){
+    if(!img) return;
+    const v = CoverWorkspace._vis(g,l.part); if(v.w<=0) return;
+    const w = (l.w/100)*v.w, h = w*img.height/img.width;
+    const cx = v.x+(l.x/100)*v.w, cy = v.y+(l.y/100)*v.h, a = (l.rot||0)*Math.PI/180;
+    ctx.save(); ctx.globalAlpha = l.opacity==null?1:l.opacity; ctx.translate(cx,cy); ctx.rotate(a); ctx.drawImage(img,-w/2,-h/2,w,h); ctx.restore();
+    if(hits){ const bw = Math.abs(w*Math.cos(a))+Math.abs(h*Math.sin(a)), bh = Math.abs(w*Math.sin(a))+Math.abs(h*Math.cos(a)); hits.push({kind:'png', id:l.id, part:l.part, x:cx-bw/2, y:cy-bh/2, w:bw, h:bh}); }
+  },
+  _drawPhoto(ctx,g,cm,img,hits){
+    const ph = cm.authorPhoto; if(!ph || !img) return;
+    const v = CoverWorkspace._vis(g,ph.part||'back'); if(v.w<=0) return;
+    const asp = {circle:1, square:1, rounded:1, portrait:3/4, landscape:4/3}[ph.shape||'circle'] || 1;
+    const fw = (ph.size||34)/100*v.w, fh = fw/asp;
+    const cx = v.x+(ph.x/100)*v.w, cy = v.y+(ph.y/100)*v.h, fx = cx-fw/2, fy = cy-fh/2;
+    const path = ()=>{
+      ctx.beginPath();
+      if(ph.shape==='circle' || !ph.shape){ ctx.ellipse(cx,cy,fw/2,fh/2,0,0,Math.PI*2); }
+      else if(ph.shape==='rounded'){ const r = fw*.14; ctx.moveTo(fx+r,fy); ctx.arcTo(fx+fw,fy,fx+fw,fy+fh,r); ctx.arcTo(fx+fw,fy+fh,fx,fy+fh,r); ctx.arcTo(fx,fy+fh,fx,fy,r); ctx.arcTo(fx,fy,fx+fw,fy,r); ctx.closePath(); }
+      else ctx.rect(fx,fy,fw,fh);
+    };
+    ctx.save(); path(); ctx.clip();
+    const sc = Math.max(fw/img.width, fh/img.height)*Math.max(100,ph.zoom||100)/100;
+    const dw = img.width*sc, dh = img.height*sc;
+    const ox = -(dw-fw)*(.5+(ph.panX||0)/200), oy = -(dh-fh)*(.5+(ph.panY||0)/200);
+    ctx.drawImage(img,fx+ox,fy+oy,dw,dh); ctx.restore();
+    if(ph.border){ ctx.save(); path(); ctx.lineWidth=(ph.borderW||2)*g.PPI/72; ctx.strokeStyle=ph.borderColor||'#c9a15a'; ctx.stroke(); ctx.restore(); }
+    if(hits) hits.push({kind:'photo', id:'photo', part:ph.part||'back', x:fx, y:fy, w:fw, h:fh});
+  },
+  async drawCanvas(){
+    const p = currentProject(); const canvas = document.getElementById('cvwsCanvas'); if(!canvas) return;
+    if(!p){ canvas.width=0; canvas.height=0; return; }
+    const token = ++CoverWorkspace._drawToken;
+    const cm = p.coverMeta || {}; const g = CoverWorkspace._geom(cm,90);
+    await CoverWorkspace.ensureFonts(cm);
+    const imgs = await CoverWorkspace._gather(cm);
+    if(token!==CoverWorkspace._drawToken) return;
+    const off = document.createElement('canvas'); off.width = g.W; off.height = g.H;
+    const hits = [];
+    CoverWorkspace.paint(off.getContext('2d'),g,imgs,cm,{guides:true, placeholders:true, foil:'overlay', hits});
+    canvas.width = g.W; canvas.height = g.H; canvas.getContext('2d').drawImage(off,0,0);
+    CoverWorkspace._hits = hits;
+    CoverWorkspace.scheduleMockUpdate();
+  },
+
+  /* ---------- click / drag layers on the flat cover ---------- */
+  wireCanvas(){
+    const c = document.getElementById('cvwsCanvas'); if(!c || c._cvwsWired) return; c._cvwsWired = true;
+    const pt = e=>{ const r=c.getBoundingClientRect(); return {x:(e.clientX-r.left)*c.width/r.width, y:(e.clientY-r.top)*c.height/r.height}; };
+    const hitAt = q=>[...CoverWorkspace._hits].reverse().find(h=>q.x>=h.x&&q.x<=h.x+h.w&&q.y>=h.y&&q.y<=h.y+h.h);
+    c.addEventListener('pointerdown',e=>{
+      const q = pt(e), hit = hitAt(q);
+      if(!hit){ if(CoverWorkspace.sel){ CoverWorkspace.sel=null; CoverWorkspace.drawCanvas(); } return; }
+      CoverWorkspace.sel = {kind:hit.kind, id:hit.id};
+      const layer = CoverWorkspace._layerOf(CoverWorkspace.sel); if(!layer) return;
+      const g = CoverWorkspace._geom(currentProject().coverMeta||{},90), v = CoverWorkspace._vis(g,hit.part);
+      CoverWorkspace._drag = {layer, v, start:q, ox:layer.x, oy:layer.y};
+      try{ c.setPointerCapture(e.pointerId); }catch(err){}
+      c.style.cursor = 'grabbing';
+      CoverWorkspace.leftTab = hit.kind==='text' ? 'text' : 'images';
+      CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
+    });
+    c.addEventListener('pointermove',e=>{
+      const d = CoverWorkspace._drag, q = pt(e);
+      if(!d){ c.style.cursor = hitAt(q) ? 'grab' : 'default'; return; }
+      d.layer.x = Math.max(-10,Math.min(110, d.ox+(q.x-d.start.x)/Math.max(1,d.v.w)*100));
+      d.layer.y = Math.max(-10,Math.min(110, d.oy+(q.y-d.start.y)/Math.max(1,d.v.h)*100));
+      const ix = document.getElementById('cvwsL_x'), iy = document.getElementById('cvwsL_y');
+      if(ix) ix.value = d.layer.x.toFixed(1); if(iy) iy.value = d.layer.y.toFixed(1);
+      CoverWorkspace.drawCanvas();
+    });
+    const end = ()=>{ if(!CoverWorkspace._drag) return; CoverWorkspace._drag = null; c.style.cursor='default'; const p=currentProject(); if(p) DB.put('projects',p); };
+    c.addEventListener('pointerup',end); c.addEventListener('pointercancel',end);
+  },
+
+  /* ---------- left panel (4 tabs) ---------- */
+  setLeftTab(t){ CoverWorkspace.leftTab = t; CoverWorkspace.renderJacket(); },
+  _n(kind,id,key,label,val,min,max,step){ return `<div class="field"><label>${label}</label><input type="number" id="cvwsL_${key}" value="${Math.round((+val||0)*100)/100}" min="${min}" max="${max}" step="${step||1}" oninput="CoverWorkspace.setLayer('${kind}','${id}','${key}',this.value)"></div>`; },
+  _c(kind,id,key,label,val){ return `<div class="field"><label>${label}</label><input type="color" value="${val}" oninput="CoverWorkspace.setLayer('${kind}','${id}','${key}',this.value)"></div>`; },
+  _k(kind,id,key,label,on){ return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" ${on?'checked':''} onchange="CoverWorkspace.setLayer('${kind}','${id}','${key}',this.checked)"> ${label}</label>`; },
+  _s(kind,id,key,label,val,opts){ return `<div class="field"><label>${label}</label><select onchange="CoverWorkspace.setLayer('${kind}','${id}','${key}',this.value)">${opts.map(o=>{ const [v,l]=Array.isArray(o)?o:[o,o]; return `<option value="${escapeHtml(v)}" ${v===val?'selected':''}>${escapeHtml(l)}</option>`; }).join('')}</select></div>`; },
+  _partOpts(cm){ return [['front','Front'],['back','Back'],['spine', (cm.binding==='stapled')?'Spine (none — stapled)':'Spine']]; },
+
   renderJacket(){
-    const p = currentProject(); const wrap = document.getElementById('cvwsJacketWrap');
-    if(!p){ wrap.innerHTML = '<div class="empty"><div class="empty-title">No project open</div></div>'; return; }
-    const cm = p.coverMeta || {};
-    const lv = cm.layerVis || {artwork:true,typography:true,barcode:true,foil:true};
-    const typo = cm.typo || {};
-    const regions = cm.foilRegions || [];
-    wrap.innerHTML = `
+    const p = currentProject(); const wrap = document.getElementById('cvwsJacketWrap'); const tabsEl = document.getElementById('cvwsLeftTabs');
+    if(!p){ wrap.innerHTML = '<div class="empty"><div class="empty-title">No project open</div></div>'; if(tabsEl) tabsEl.innerHTML=''; return; }
+    const cm = CoverWorkspace.ensureTexts();
+    const tab = CoverWorkspace.leftTab;
+    if(tabsEl) tabsEl.innerHTML = [['setup','Setup'],['text','Text'],['images','Images'],['print','Foil/UV']].map(([k,l])=>`<button class="tab ${tab===k?'active':''}" style="padding:6px 9px;font-size:12px;white-space:nowrap;" onclick="CoverWorkspace.setLeftTab('${k}')">${l}</button>`).join('');
+    let html = '';
+    if(tab==='setup'){
+      const lv = cm.layerVis || {};
+      const layerNames = {artwork:'Artwork', images:'PNG overlays & author photo', typography:'Text', barcode:'Barcode', foil:'Foil / Spot UV'};
+      html = `
       <div class="cvws-field-row"><div class="field"><label>Trim W (in)</label><input type="number" step="0.01" id="cvwsTrimW" value="${cm.trimW||'8.5'}" onchange="CoverWorkspace.saveField()"></div>
         <div class="field"><label>Trim H (in)</label><input type="number" step="0.01" id="cvwsTrimH" value="${cm.trimH||'8.5'}" onchange="CoverWorkspace.saveField()"></div></div>
       <div class="field"><label>Page Count</label><input type="number" id="cvwsPageCount" value="${cm.pageCount||'32'}" onchange="CoverWorkspace.saveField()"></div>
       <div class="field"><label>Paper Stock</label><select id="cvwsPaperStock" onchange="CoverWorkspace.saveField()">${Object.entries(CoverWorkspace.PAPER_STOCKS).map(([k,v])=>`<option value="${k}" ${((cm.paperStockKey||'white_60')===k)?'selected':''}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label>Binding</label><select id="cvwsBinding" onchange="CoverWorkspace.saveField()">
+        <option value="spined" ${cm.binding!=='stapled'?'selected':''}>Spined — perfect bound (flat spine)</option>
+        <option value="stapled" ${cm.binding==='stapled'?'selected':''}>Stapled — saddle stitch (folded, no spine)</option></select></div>
       <div id="cvwsSpineOut" style="margin:8px 0;padding:8px;background:var(--bg-elevated);border-radius:6px;font-family:var(--font-mono);font-size:11.5px;"></div>
       <hr style="border-color:var(--border-soft);margin:10px 0;">
       <div class="ws2d-panel-head" style="padding-left:0;border:none;">Layers</div>
-      ${['artwork','typography','barcode','foil'].map(k=>`<div class="cvws-layer-row"><input type="checkbox" ${lv[k]!==false?'checked':''} onchange="CoverWorkspace.toggleLayer('${k}', this.checked)"> ${k==='foil'?'Foil / Spot UV Mask':k.charAt(0).toUpperCase()+k.slice(1)}</div>`).join('')}
+      ${['artwork','images','typography','barcode','foil'].map(k=>`<div class="cvws-layer-row"><input type="checkbox" ${lv[k]!==false?'checked':''} onchange="CoverWorkspace.toggleLayer('${k}', this.checked)"> ${layerNames[k]}</div>`).join('')}
       <hr style="border-color:var(--border-soft);margin:10px 0;">
-      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Typography</div>
-      <div class="field"><label>Title</label><input type="text" id="cvwsTitle" value="${escapeHtml(typo.title||p.name||'')}" onchange="CoverWorkspace.saveTypo()"></div>
-      <div class="field"><label>Author</label><input type="text" id="cvwsAuthor" value="${escapeHtml(typo.author||'')}" onchange="CoverWorkspace.saveTypo()"></div>
-      <div class="cvws-field-row"><div class="field"><label>Title Size</label><input type="number" id="cvwsTitleSize" value="${typo.titleSize||34}" onchange="CoverWorkspace.saveTypo()"></div>
-        <div class="field"><label>Title Color</label><input type="color" id="cvwsTitleColor" value="${typo.titleColor||'#f4ead6'}" onchange="CoverWorkspace.saveTypo()"></div></div>
-      <hr style="border-color:var(--border-soft);margin:10px 0;">
-      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Foil / Spot UV Regions</div>
+      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Cover artwork</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${['back','spine','front'].map(part=>`<label class="btn btn-sm" style="cursor:pointer;">${cm[part+'Img']?'↻ ':'+ '}${part}<input type="file" accept="image/*" style="display:none;" onchange="CoverWorkspace.uploadPart('${part}', this.files[0])"></label>`).join('')}
+      </div>`;
+    } else if(tab==='text'){
+      const sel = CoverWorkspace.sel && CoverWorkspace.sel.kind==='text' ? cm.texts.find(t=>t.id===CoverWorkspace.sel.id) : null;
+      const fonts = CoverWorkspace.FONTS.concat((cm.customFonts||[]).map(f=>f.name));
+      html = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Add text, then click it on the flat cover to drag it, or edit it below.</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">
+        <button class="btn btn-sm" onclick="CoverWorkspace.addText('title')">+ Title</button><button class="btn btn-sm" onclick="CoverWorkspace.addText('author')">+ Author</button>
+        <button class="btn btn-sm" onclick="CoverWorkspace.addText('blurb')">+ Back text</button><button class="btn btn-sm" onclick="CoverWorkspace.addText('spine')">+ Spine</button><button class="btn btn-sm" onclick="CoverWorkspace.addText('custom')">+ Custom</button>
+      </div>
+      ${cm.texts.map(t=>`<div class="cvws-layer-row" style="cursor:pointer;${sel&&sel.id===t.id?'background:rgba(201,161,90,.16);':''}" onclick="CoverWorkspace.selectLayer('text','${t.id}')"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((t.text||'').split('\n')[0]||'(empty)')}</span><span style="font-size:10px;color:var(--text-faint);">${t.part}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();CoverWorkspace.removeLayer('text','${t.id}')">✕</button></div>`).join('') || '<div class="help-block">No text yet.</div>'}
+      ${sel ? `<hr style="border-color:var(--border-soft);margin:10px 0;">
+        <div class="field"><label>Text</label><textarea rows="4" oninput="CoverWorkspace.setLayer('text','${sel.id}','text',this.value)">${escapeHtml(sel.text||'')}</textarea></div>
+        ${CoverWorkspace._s('text',sel.id,'part','Place on',sel.part,CoverWorkspace._partOpts(cm))}
+        ${CoverWorkspace._s('text',sel.id,'font','Font',sel.font,fonts)}
+        <label class="btn btn-sm" style="cursor:pointer;margin-bottom:8px;">+ Upload font (.ttf/.otf/.woff)<input type="file" accept=".ttf,.otf,.woff,.woff2" style="display:none;" onchange="CoverWorkspace.uploadFont(this.files[0])"></label>
+        <div class="cvws-field-row">${CoverWorkspace._n('text',sel.id,'size','Size (pt)',sel.size,4,200,1)}${CoverWorkspace._c('text',sel.id,'color','Color',sel.color)}</div>
+        <div style="display:flex;gap:12px;margin-bottom:8px;">${CoverWorkspace._k('text',sel.id,'bold','Bold',sel.bold)}${CoverWorkspace._k('text',sel.id,'italic','Italic',sel.italic)}</div>
+        ${CoverWorkspace._s('text',sel.id,'align','Align',sel.align,['left','center','right'])}
+        <div class="cvws-field-row">${CoverWorkspace._n('text',sel.id,'x','X %',sel.x,-10,110,.5)}${CoverWorkspace._n('text',sel.id,'y','Y %',sel.y,-10,110,.5)}</div>
+        <div class="cvws-field-row">${CoverWorkspace._n('text',sel.id,'w','Wrap width %',sel.w,5,150,1)}${CoverWorkspace._n('text',sel.id,'lh','Line height',sel.lh,.8,3,.05)}</div>
+        ${CoverWorkspace._n('text',sel.id,'spacing','Letter spacing (pt)',sel.spacing,-2,30,.5)}
+        <div style="display:flex;gap:12px;margin-bottom:6px;">${CoverWorkspace._k('text',sel.id,'shadow','Shadow',sel.shadow)}${CoverWorkspace._k('text',sel.id,'outline','Outline',sel.outline)}</div>
+        ${sel.outline?`<div class="cvws-field-row">${CoverWorkspace._c('text',sel.id,'outlineColor','Outline color',sel.outlineColor)}${CoverWorkspace._n('text',sel.id,'outlineW','Outline (pt)',sel.outlineW,.5,20,.5)}</div>`:''}
+        ${sel.part==='spine'&&cm.binding==='stapled'?'<div class="help-block">Stapled books have no spine, so this text is hidden.</div>':''}
+        <div style="display:flex;gap:6px;margin-top:6px;"><button class="btn btn-sm" onclick="CoverWorkspace.regionFromLayer('text','${sel.id}','foil')">✨ Foil this text</button><button class="btn btn-sm" onclick="CoverWorkspace.regionFromLayer('text','${sel.id}','uv')">Spot UV this</button></div>` : ''}`;
+    } else if(tab==='images'){
+      const selPng = CoverWorkspace.sel && CoverWorkspace.sel.kind==='png' ? cm.pngLayers.find(t=>t.id===CoverWorkspace.sel.id) : null;
+      const ph = cm.authorPhoto; const photoSel = !!ph && CoverWorkspace.sel && CoverWorkspace.sel.kind==='photo';
+      html = `
+      <div class="ws2d-panel-head" style="padding-left:0;border:none;">PNG overlays (title art, logos)</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Transparent PNGs sit on top of the artwork. Click one on the cover to drag it.</div>
+      <label class="btn btn-sm btn-gold" style="cursor:pointer;margin-bottom:6px;">+ Add PNG<input type="file" accept="image/png,image/*" style="display:none;" onchange="CoverWorkspace.addPng(this.files[0]); this.value='';"></label>
+      ${cm.pngLayers.map(l=>`<div class="cvws-layer-row" style="cursor:pointer;${selPng&&selPng.id===l.id?'background:rgba(201,161,90,.16);':''}" onclick="CoverWorkspace.selectLayer('png','${l.id}')"><img src="${l.img}" style="width:26px;height:26px;object-fit:contain;background:#333;border-radius:3px;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(l.name||'PNG')}</span><span style="font-size:10px;color:var(--text-faint);">${l.part}</span><button class="btn btn-sm btn-danger" style="padding:0 6px;" onclick="event.stopPropagation();CoverWorkspace.removeLayer('png','${l.id}')">✕</button></div>`).join('')}
+      ${selPng ? `<div style="margin-top:8px;">
+        ${CoverWorkspace._s('png',selPng.id,'part','Place on',selPng.part,CoverWorkspace._partOpts(cm))}
+        <div class="cvws-field-row">${CoverWorkspace._n('png',selPng.id,'x','X %',selPng.x,-10,110,.5)}${CoverWorkspace._n('png',selPng.id,'y','Y %',selPng.y,-10,110,.5)}</div>
+        <div class="cvws-field-row">${CoverWorkspace._n('png',selPng.id,'w','Width %',selPng.w,2,200,1)}${CoverWorkspace._n('png',selPng.id,'rot','Rotate °',selPng.rot||0,-180,180,1)}</div>
+        ${CoverWorkspace._n('png',selPng.id,'opacity','Opacity (0–1)',selPng.opacity==null?1:selPng.opacity,0,1,.05)}
+        <div style="display:flex;gap:6px;"><button class="btn btn-sm" onclick="CoverWorkspace.regionFromLayer('png','${selPng.id}','foil')">✨ Foil this</button><button class="btn btn-sm" onclick="CoverWorkspace.regionFromLayer('png','${selPng.id}','uv')">Spot UV this</button></div></div>` : ''}
+      <hr style="border-color:var(--border-soft);margin:12px 0;">
+      <div class="ws2d-panel-head" style="padding-left:0;border:none;">Author photo</div>
+      <label class="btn btn-sm btn-gold" style="cursor:pointer;margin-bottom:6px;">${ph?'↻ Replace photo':'+ Add author photo'}<input type="file" accept="image/*" style="display:none;" onchange="CoverWorkspace.setPhoto(this.files[0]); this.value='';"></label>
+      ${ph ? `<button class="btn btn-sm btn-danger" onclick="CoverWorkspace.removeLayer('photo','photo')">Remove</button>
+        <div style="margin-top:8px;${photoSel?'':'opacity:1;'}">
+        ${CoverWorkspace._s('photo','photo','shape','Frame shape',ph.shape||'circle',[['circle','Circle'],['rounded','Rounded square'],['square','Square'],['portrait','Portrait 3:4'],['landscape','Landscape 4:3']])}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Framing presets</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;"><button class="btn btn-sm" onclick="CoverWorkspace.photoFraming('wide')">Wide</button><button class="btn btn-sm" onclick="CoverWorkspace.photoFraming('half')">Half body</button><button class="btn btn-sm" onclick="CoverWorkspace.photoFraming('head')">Head &amp; shoulders</button><button class="btn btn-sm" onclick="CoverWorkspace.photoFraming('close')">Close-up</button></div>
+        ${CoverWorkspace._s('photo','photo','part','Place on',ph.part||'back',[['back','Back'],['front','Front']])}
+        <div class="cvws-field-row">${CoverWorkspace._n('photo','photo','size','Size %',ph.size||34,5,100,1)}${CoverWorkspace._n('photo','photo','zoom','Zoom %',ph.zoom||100,100,400,5)}</div>
+        <div class="cvws-field-row">${CoverWorkspace._n('photo','photo','x','X %',ph.x,-10,110,.5)}${CoverWorkspace._n('photo','photo','y','Y %',ph.y,-10,110,.5)}</div>
+        <div class="cvws-field-row">${CoverWorkspace._n('photo','photo','panX','Pan ◀ ▶',ph.panX||0,-100,100,5)}${CoverWorkspace._n('photo','photo','panY','Pan ▲ ▼',ph.panY||0,-100,100,5)}</div>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px;">${CoverWorkspace._k('photo','photo','border','Border',ph.border)}</div>
+        ${ph.border?`<div class="cvws-field-row">${CoverWorkspace._c('photo','photo','borderColor','Border color',ph.borderColor||'#c9a15a')}${CoverWorkspace._n('photo','photo','borderW','Border (pt)',ph.borderW||2,.5,20,.5)}</div>`:''}
+        </div>` : ''}`;
+    } else {
+      const regions = cm.foilRegions||[];
+      html = `
+      <div class="help-block" style="margin-bottom:8px;line-height:1.5;">
+        <b>Foil</b> is a thin metallic film (gold, silver, copper…) heat-pressed onto chosen parts of the cover — typically the title lettering.<br>
+        <b>Spot UV</b> is a clear glossy varnish printed only on chosen parts of a matte cover, so those parts shine against the matte background.<br>
+        Neither is printed with ink, so the printer needs each as its own black-and-white <i>mask</i>. Mark the areas here: they appear tinted on the flat cover (gold = foil, white = UV), look metallic/glossy in the 3D mockup, and are exported as separate mask pages in the PDF.
+      </div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${regions.length} region${regions.length===1?'':'s'} marked</div>
       ${regions.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:2px 0;"><span>${escapeHtml(r.part)} · ${escapeHtml(r.kind)}</span><button class="btn btn-sm btn-danger" style="padding:1px 6px;" onclick="CoverWorkspace.removeRegion('${r.id}')">×</button></div>`).join('')}
       <button class="btn btn-sm" style="margin-top:6px;" onclick="CoverWorkspace.addRegionPrompt()">+ Mark Foil/UV Region</button>
-      <hr style="border-color:var(--border-soft);margin:10px 0;">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${['back','spine','front'].map(part=>`<label class="btn btn-sm" style="cursor:pointer;">${part}<input type="file" accept="image/*" style="display:none;" onchange="CoverWorkspace.uploadPart('${part}', this.files[0])"></label>`).join('')}
-      </div>`;
-    CoverWorkspace.recalc();
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Shortcut: select a text or PNG layer and press “Foil this” to cover it automatically.</div>`;
+    }
+    wrap.innerHTML = html;
+    if(tab==='setup') CoverWorkspace.recalc(); else CoverWorkspace._updateDims();
   },
+
+  /* ---------- editing ---------- */
   saveField(){
     const p = currentProject(); if(!p) return;
     p.coverMeta = p.coverMeta || {};
     Object.assign(p.coverMeta, { trimW:document.getElementById('cvwsTrimW').value, trimH:document.getElementById('cvwsTrimH').value,
-      pageCount:document.getElementById('cvwsPageCount').value, paperStockKey:document.getElementById('cvwsPaperStock').value });
-    DB.put('projects',p); CoverWorkspace.recalc();
-  },
-  saveTypo(){
-    const p = currentProject(); if(!p) return;
-    p.coverMeta = p.coverMeta || {};
-    p.coverMeta.typo = { on:true, title:document.getElementById('cvwsTitle').value, author:document.getElementById('cvwsAuthor').value,
-      titleSize:parseInt(document.getElementById('cvwsTitleSize').value)||34, titleColor:document.getElementById('cvwsTitleColor').value, authorSize:18, authorColor:'#c9a15a' };
-    DB.put('projects',p); CoverWorkspace.drawCanvas();
+      pageCount:document.getElementById('cvwsPageCount').value, paperStockKey:document.getElementById('cvwsPaperStock').value,
+      binding:document.getElementById('cvwsBinding').value });
+    DB.put('projects',p); CoverWorkspace.recalc(); CoverWorkspace.render3DMock();
   },
   toggleLayer(key,val){
     const p = currentProject(); if(!p) return;
     p.coverMeta = p.coverMeta || {};
-    p.coverMeta.layerVis = p.coverMeta.layerVis || {artwork:true,typography:true,barcode:true,foil:true};
+    p.coverMeta.layerVis = p.coverMeta.layerVis || {};
     p.coverMeta.layerVis[key] = val;
     DB.put('projects',p); CoverWorkspace.drawCanvas();
+  },
+  addText(kind){
+    const p = currentProject(); if(!p) return; const cm = CoverWorkspace.ensureTexts();
+    const t = CoverWorkspace._newText(kind,p);
+    if(t.part==='spine' && cm.binding==='stapled') t.part='front';
+    cm.texts.push(t); CoverWorkspace.sel = {kind:'text', id:t.id};
+    DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
+  },
+  selectLayer(kind,id){ CoverWorkspace.sel = {kind,id}; CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas(); },
+  removeLayer(kind,id){
+    const p = currentProject(); if(!p) return; const cm = p.coverMeta||{};
+    if(kind==='text') cm.texts = (cm.texts||[]).filter(t=>t.id!==id);
+    else if(kind==='png') cm.pngLayers = (cm.pngLayers||[]).filter(t=>t.id!==id);
+    else if(kind==='photo') delete cm.authorPhoto;
+    if(CoverWorkspace.sel && CoverWorkspace.sel.id===id) CoverWorkspace.sel = null;
+    DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
+  },
+  setLayer(kind,id,key,val){
+    const L = CoverWorkspace._layerOf({kind,id}); if(!L) return;
+    const numeric = ['size','x','y','w','lh','spacing','outlineW','opacity','rot','zoom','panX','panY','borderW'];
+    if(numeric.includes(key)){ val = parseFloat(val); if(isNaN(val)) return; }
+    L[key] = val;
+    CoverWorkspace._saveSoon(); CoverWorkspace.drawCanvas();
+    if(['part','outline','border','shape'].includes(key)) CoverWorkspace.renderJacket();
+  },
+  async uploadFont(file){
+    if(!file) return; const p = currentProject(); if(!p) return; const cm = p.coverMeta;
+    const name = file.name.replace(/\.[^.]+$/,'').replace(/[^\w \-]/g,'').trim() || 'Custom Font';
+    cm.customFonts = (cm.customFonts||[]).filter(f=>f.name!==name); cm.customFonts.push({name, data:await CoverWorkspace._readFile(file)});
+    await CoverWorkspace.ensureFonts(cm);
+    const sel = CoverWorkspace.sel && CoverWorkspace.sel.kind==='text' ? CoverWorkspace._layerOf(CoverWorkspace.sel) : null; if(sel) sel.font = name;
+    await DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas(); toast('Font "'+name+'" added.');
+  },
+  async addPng(file){
+    if(!file) return; const p = currentProject(); if(!p) return; const cm = CoverWorkspace.ensureTexts();
+    const l = {id:uid(), name:file.name, img:await CoverWorkspace._readFile(file), part:'front', x:50, y:30, w:70, rot:0, opacity:1};
+    cm.pngLayers.push(l); CoverWorkspace.sel = {kind:'png', id:l.id};
+    await DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
+  },
+  async setPhoto(file){
+    if(!file) return; const p = currentProject(); if(!p) return; const cm = CoverWorkspace.ensureTexts();
+    const old = cm.authorPhoto || {};
+    cm.authorPhoto = Object.assign({part:'back', shape:'circle', size:34, x:50, y:62, zoom:100, panX:0, panY:0, border:true, borderColor:'#c9a15a', borderW:2}, old, {img:await CoverWorkspace._readFile(file)});
+    CoverWorkspace.sel = {kind:'photo', id:'photo'};
+    await DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
+  },
+  photoFraming(kind){
+    const ph = (currentProject().coverMeta||{}).authorPhoto; if(!ph) return;
+    const m = {wide:[100,0,0], half:[140,0,-35], head:[200,0,-55], close:[300,0,-45]}[kind]; if(!m) return;
+    ph.zoom = m[0]; ph.panX = m[1]; ph.panY = m[2];
+    CoverWorkspace._saveSoon(); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
   },
   uploadPart(part,file){
     if(!file) return;
     const p = currentProject(); if(!p) return;
     p.coverMeta = p.coverMeta || {};
     const reader = new FileReader();
-    reader.onload = async ()=>{ p.coverMeta[part+'Img'] = reader.result; await DB.put('projects',p); CoverWorkspace.drawCanvas(); CoverWorkspace.render3DMock(); CoverWorkspace.renderBottom(); };
+    reader.onload = async ()=>{ p.coverMeta[part+'Img'] = reader.result; await DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas(); CoverWorkspace.renderBottom(); };
     reader.readAsDataURL(file);
+  },
+  regionFromLayer(kind,id,type){
+    const p = currentProject(); if(!p) return; const cm = p.coverMeta||{};
+    const h = CoverWorkspace._hits.find(h=>h.kind===kind && h.id===id);
+    if(!h){ toast('Make sure that layer is visible on the cover first.'); return; }
+    const g = CoverWorkspace._geom(cm,90);
+    const [ox,ow] = h.part==='back' ? [0,g.backW] : h.part==='spine' ? [g.backW,g.spineW] : [g.frontX,g.backW];
+    if(ow<=0){ toast('That part does not exist for this binding.'); return; }
+    const pad = 4;
+    cm.foilRegions = cm.foilRegions||[];
+    cm.foilRegions.push({id:uid(), part:h.part, kind:type, xPct:(h.x-pad-ox)/ow*100, yPct:(h.y-pad)/g.H*100, wPct:(h.w+pad*2)/ow*100, hPct:(h.h+pad*2)/g.H*100});
+    DB.put('projects',p); CoverWorkspace.drawCanvas(); toast((type==='foil'?'Foil':'Spot UV')+' region added — see the Foil / UV tab.');
   },
   addRegionPrompt(){
     Modals.open(`<h3>Mark Foil / Spot UV Region</h3>
@@ -4425,91 +4846,22 @@ const CoverWorkspace = {
     p.coverMeta.foilRegions = (p.coverMeta.foilRegions||[]).filter(r=>r.id!==id);
     DB.put('projects',p); CoverWorkspace.renderJacket(); CoverWorkspace.drawCanvas();
   },
+  _updateDims(){
+    const p = currentProject(); if(!p) return; const g = CoverWorkspace._geom(p.coverMeta||{},1);
+    const dimsLbl = document.getElementById('cvwsDims'); if(dimsLbl) dimsLbl.textContent = `${g.fullW.toFixed(2)}" × ${g.fullH.toFixed(2)}"`;
+  },
   recalc(){
     const p = currentProject(); if(!p) return;
-    const cm = p.coverMeta || {};
-    const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, pageCount = parseInt(cm.pageCount)||32;
-    const stock = CoverWorkspace.PAPER_STOCKS[cm.paperStockKey||'white_60'] || CoverWorkspace.PAPER_STOCKS.white_60;
-    const bleed = 0.125; const spineWidth = pageCount*stock.caliper;
-    const fullWrapW = (trimW+bleed)*2+spineWidth, fullWrapH = trimH+bleed*2;
+    const cm = p.coverMeta || {}; const g = CoverWorkspace._geom(cm,1);
     const out = document.getElementById('cvwsSpineOut');
-    if(out) out.innerHTML = `Spine: <b style="color:var(--gold-bright);">${spineWidth.toFixed(3)}"</b> (${pageCount}pg × ${stock.label})<br>Full wrap: <b style="color:var(--gold-bright);">${fullWrapW.toFixed(3)}" × ${fullWrapH.toFixed(3)}"</b>`;
-    const dimsLbl = document.getElementById('cvwsDims');
-    if(dimsLbl) dimsLbl.textContent = `${fullWrapW.toFixed(2)}" × ${fullWrapH.toFixed(2)}"`;
+    if(out){
+      const spineLine = g.binding==='stapled'
+        ? `Spine: <b style="color:var(--gold-bright);">none</b> — saddle-stitch fold${g.pageCount%4?`<br><span style="color:#e0a050;">⚠ Stapled books need a page count that is a multiple of 4 (you have ${g.pageCount}).</span>`:''}`
+        : `Spine: <b style="color:var(--gold-bright);">${g.spineIn.toFixed(3)}"</b> (${g.pageCount}pg × ${g.stock.label})`;
+      out.innerHTML = `${spineLine}<br>Full wrap: <b style="color:var(--gold-bright);">${g.fullW.toFixed(3)}" × ${g.fullH.toFixed(3)}"</b>`;
+    }
+    CoverWorkspace._updateDims();
     CoverWorkspace.drawCanvas();
-  },
-  _img(src){
-    if(CoverWorkspace._imgCache[src]) return Promise.resolve(CoverWorkspace._imgCache[src]);
-    return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ CoverWorkspace._imgCache[src]=img; res(img); }; img.onerror=rej; img.src=src; });
-  },
-  async drawCanvas(){
-    const p = currentProject(); const canvas = document.getElementById('cvwsCanvas'); if(!canvas) return;
-    if(!p){ canvas.width=0; canvas.height=0; return; }
-    const cm = p.coverMeta || {};
-    const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, pageCount = parseInt(cm.pageCount)||32;
-    const stock = CoverWorkspace.PAPER_STOCKS[cm.paperStockKey||'white_60'] || CoverWorkspace.PAPER_STOCKS.white_60;
-    const bleed = 0.125; const spineWidth = pageCount*stock.caliper;
-    const fullWrapW = (trimW+bleed)*2+spineWidth, fullWrapH = trimH+bleed*2;
-    const PPI = 90;
-    canvas.width = Math.max(1,Math.round(fullWrapW*PPI)); canvas.height = Math.max(1,Math.round(fullWrapH*PPI));
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    const backW = (trimW+bleed)*PPI, spineW = spineWidth*PPI, frontX = backW+spineW;
-    const lv = cm.layerVis || {artwork:true,typography:true,barcode:true,foil:true};
-    const drawPart = async (x,w,imgSrc,label)=>{
-      if(lv.artwork!==false && imgSrc){
-        try{ const img = await CoverWorkspace._img(imgSrc); ctx.drawImage(img,x,0,w,canvas.height); return; }catch(e){}
-      }
-      ctx.fillStyle = '#222'; ctx.fillRect(x,0,w,canvas.height);
-      ctx.strokeStyle = '#444'; ctx.strokeRect(x,0,w,canvas.height);
-      ctx.fillStyle = '#666'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
-      ctx.fillText(label, x+w/2, canvas.height/2);
-    };
-    await drawPart(0, backW, cm.backImg, 'BACK');
-    await drawPart(backW, spineW, cm.spineImg, 'SPINE');
-    await drawPart(frontX, backW, cm.frontImg, 'FRONT');
-
-    // fold guides + spine centering marks
-    const bleedPx = bleed*PPI;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,80,80,.85)'; ctx.setLineDash([6,5]); ctx.lineWidth = 1.5;
-    ctx.strokeRect(bleedPx,bleedPx, canvas.width-2*bleedPx, canvas.height-2*bleedPx);
-    ctx.beginPath(); ctx.moveTo(backW,0); ctx.lineTo(backW,canvas.height); ctx.moveTo(frontX,0); ctx.lineTo(frontX,canvas.height); ctx.stroke();
-    const spineCenterX = backW+spineW/2;
-    ctx.setLineDash([]); ctx.strokeStyle = 'rgba(111,163,201,.9)';
-    ctx.beginPath(); ctx.moveTo(spineCenterX,0); ctx.lineTo(spineCenterX,14); ctx.moveTo(spineCenterX,canvas.height-14); ctx.lineTo(spineCenterX,canvas.height); ctx.stroke();
-    ctx.restore();
-
-    // typography overlay (front)
-    if(lv.typography!==false && cm.typo && cm.typo.on!==false){
-      const t = cm.typo;
-      ctx.save(); ctx.textAlign = 'center';
-      ctx.fillStyle = t.titleColor||'#f4ead6'; ctx.font = `bold ${t.titleSize||34}px Georgia, serif`;
-      ctx.fillText(t.title||'', frontX+backW/2, canvas.height*0.28);
-      ctx.fillStyle = t.authorColor||'#c9a15a'; ctx.font = `${t.authorSize||18}px Georgia, serif`;
-      ctx.fillText(t.author||'', frontX+backW/2, canvas.height*0.86);
-      ctx.restore();
-    }
-
-    // foil / spot UV region overlay
-    if(lv.foil!==false && (cm.foilRegions||[]).length){
-      (cm.foilRegions||[]).forEach(r=>{
-        const [ox,ow] = r.part==='back' ? [0,backW] : r.part==='spine' ? [backW,spineW] : [frontX,backW];
-        const rx = ox+(r.xPct/100)*ow, ry = (r.yPct/100)*canvas.height, rw = (r.wPct/100)*ow, rh = (r.hPct/100)*canvas.height;
-        ctx.save();
-        if(r.kind==='foil'){ ctx.fillStyle = 'rgba(224,189,119,.4)'; ctx.strokeStyle = 'rgba(224,189,119,.9)'; }
-        else { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.strokeStyle = 'rgba(255,255,255,.7)'; }
-        ctx.lineWidth = 1.5; ctx.fillRect(rx,ry,rw,rh); ctx.strokeRect(rx,ry,rw,rh);
-        ctx.font = '10px monospace'; ctx.fillStyle = '#fff'; ctx.fillText(r.kind.toUpperCase(), rx+3, ry+12);
-        ctx.restore();
-      });
-    }
-
-    // barcode on back cover
-    if(lv.barcode!==false && cm.isbn){
-      const bc = CoverWorkspace.computeEAN13(cm.isbn);
-      if(bc) CoverWorkspace.drawBarcodeOnCanvas(ctx, bc, 20, canvas.height-90, 1.4, 60);
-    }
   },
 
   /* ---- EAN-13 barcode (real checksum + module encoding, no external service) ---- */
@@ -4530,41 +4882,112 @@ const CoverWorkspace = {
     bits += '101';
     return bits;
   },
-  drawBarcodeOnCanvas(ctx, digits13, x, y, moduleW, height){
+  drawBarcodeOnCanvas(ctx, digits13, x, y, moduleW, height, sc){
+    sc = sc||1;
     const bits = CoverWorkspace.buildEAN13Bits(digits13);
     ctx.save();
-    ctx.fillStyle = '#fff'; ctx.fillRect(x-4, y-2, bits.length*moduleW+8, height+18);
+    ctx.fillStyle = '#fff'; ctx.fillRect(x-4*sc, y-2*sc, bits.length*moduleW+8*sc, height+18*sc);
     ctx.fillStyle = '#000';
     let cx = x;
     for(const b of bits){ if(b==='1') ctx.fillRect(cx,y,moduleW,height); cx += moduleW; }
-    ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.fillText(digits13.join(''), x, y+height+13);
+    ctx.font = (9*sc)+'px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(digits13.join(''), x, y+height+13*sc);
     ctx.restore();
   },
 
-  /* ---- 3D mockup ---- */
+  /* ---- 3D mockup: real box (front, back, spine, page block), centred rotation, paper texture ---- */
   render3DMock(){
     const p = currentProject(); const wrap = document.getElementById('cvwsMockWrap'); if(!wrap) return;
     if(!p){ wrap.innerHTML = ''; return; }
-    const cm = p.coverMeta || {};
-    wrap.innerHTML = `<div class="cvws-mock3d-stage"><div class="cvws-mock3d-book" id="cvwsMockBook" style="transform:rotateY(${CoverWorkspace.mockAngle||-25}deg);">
-        <div class="cvws-mock3d-face" style="background-image:url('${cm.frontImg||''}');"></div>
-        <div class="cvws-mock3d-face cvws-mock3d-spine" style="background-image:url('${cm.spineImg||''}');"></div>
-      </div></div>
-      <input type="range" min="-90" max="90" value="${CoverWorkspace.mockAngle||-25}" oninput="CoverWorkspace.setMockAngle(this.value)" style="width:100%;">
-      <button class="btn btn-sm" style="margin-top:6px;width:100%;" onclick="CoverWorkspace.toggleAutoRotate()">${CoverWorkspace._autoRotate?'⏸ Stop Auto-Rotate':'▶ Auto-Rotate'}</button>`;
+    const cm = p.coverMeta || {}; const g = CoverWorkspace._geom(cm,1);
+    const k = 190/Math.max(g.trimW,g.trimH);
+    const W = Math.round(g.trimW*k), H = Math.round(g.trimH*k);
+    const stapled = g.binding==='stapled';
+    const D = stapled ? 4 : Math.max(9, Math.round(g.spineIn*k*1.3));
+    const key = cm.paperStockKey||'';
+    const cls = (/cream/.test(key)?'cream ':'')+(/gloss/.test(key)?'gloss ':'')+(/matte/.test(key)?'matte ':'')+(stapled?'stapled':'spined');
+    if(CoverWorkspace.mockAngle===-25) CoverWorkspace.mockAngle = 28;
+    wrap.innerHTML = `
+      <div class="cvws-mock3d-stage" id="cvwsMockStage" title="Drag to rotate">
+        <div class="cvws-mock3d-book ${cls}" id="cvwsMockBook" style="width:${W}px;height:${H}px;">
+          <div class="mf mf-front" style="width:${W}px;height:${H}px;transform:translateZ(${D/2}px);"></div>
+          <div class="mf mf-back" style="width:${W}px;height:${H}px;transform:rotateY(180deg) translateZ(${D/2}px);"></div>
+          <div class="mf mf-spine" style="width:${D}px;height:${H}px;left:${-D/2}px;transform:rotateY(-90deg);">${stapled?'<i class="cvws-staple" style="top:20%;"></i><i class="cvws-staple" style="top:72%;"></i>':''}</div>
+          <div class="mf mf-fore" style="width:${D}px;height:${H}px;left:${W-D/2}px;transform:rotateY(90deg);"></div>
+          <div class="mf mf-top" style="width:${W}px;height:${D}px;top:${-D/2}px;transform:rotateX(90deg);"></div>
+          <div class="mf mf-bottom" style="width:${W}px;height:${D}px;top:${H-D/2}px;transform:rotateX(-90deg);"></div>
+        </div>
+        <div class="cvws-mock-shadow"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);text-align:center;margin:2px 0 6px;">${stapled?'Saddle-stitched booklet — folded spine with staples':'Perfect-bound book — flat spine'} · drag the book to rotate</div>
+      <label style="font-size:11px;color:var(--text-muted);">Rotate</label>
+      <input type="range" id="cvwsMockRot" min="-180" max="180" value="${Math.round(CoverWorkspace.mockAngle)}" oninput="CoverWorkspace.setMockAngle(this.value)" style="width:100%;">
+      <label style="font-size:11px;color:var(--text-muted);">Tilt (view from above)</label>
+      <input type="range" id="cvwsMockTilt" min="-40" max="40" value="${Math.round(CoverWorkspace.mockTilt)}" oninput="CoverWorkspace.setMockTilt(this.value)" style="width:100%;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">
+        <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(0,6)">Front</button>
+        <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(28,10)">3/4</button>
+        <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(90,0)">Spine</button>
+        <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(180,6)">Back</button>
+        <button class="btn btn-sm" onclick="CoverWorkspace.mockPreset(-62,28)">Pages</button>
+      </div>
+      <button class="btn btn-sm" id="cvwsAutoBtn" style="margin-top:6px;width:100%;" onclick="CoverWorkspace.toggleAutoRotate()">${CoverWorkspace._autoRotate?'⏸ Stop Auto-Rotate':'▶ Auto-Rotate'}</button>`;
+    CoverWorkspace.applyMockTransform();
+    CoverWorkspace.wireMockDrag();
+    CoverWorkspace.scheduleMockUpdate(0);
   },
-  setMockAngle(v){ CoverWorkspace.mockAngle = parseFloat(v); const book = document.getElementById('cvwsMockBook'); if(book) book.style.transform = `rotateY(${v}deg)`; },
+  applyMockTransform(){
+    const book = document.getElementById('cvwsMockBook'); if(!book) return;
+    book.style.transform = `rotateX(${-CoverWorkspace.mockTilt}deg) rotateY(${CoverWorkspace.mockAngle}deg)`;
+    const r = document.getElementById('cvwsMockRot'); if(r) r.value = Math.round(((CoverWorkspace.mockAngle+180)%360+360)%360-180);
+    const t = document.getElementById('cvwsMockTilt'); if(t) t.value = Math.round(CoverWorkspace.mockTilt);
+  },
+  setMockAngle(v){ CoverWorkspace.mockAngle = parseFloat(v); CoverWorkspace.applyMockTransform(); },
+  setMockTilt(v){ CoverWorkspace.mockTilt = parseFloat(v); CoverWorkspace.applyMockTransform(); },
+  mockPreset(a,t){ CoverWorkspace.mockAngle = a; CoverWorkspace.mockTilt = t; CoverWorkspace.applyMockTransform(); },
+  wireMockDrag(){
+    const st = document.getElementById('cvwsMockStage'); if(!st) return;
+    let d = null;
+    st.addEventListener('pointerdown',e=>{ d = {x:e.clientX, y:e.clientY, a:CoverWorkspace.mockAngle, t:CoverWorkspace.mockTilt}; try{ st.setPointerCapture(e.pointerId); }catch(err){} st.style.cursor='grabbing'; });
+    st.addEventListener('pointermove',e=>{ if(!d) return; CoverWorkspace.mockAngle = d.a+(e.clientX-d.x)*0.7; CoverWorkspace.mockTilt = Math.max(-40,Math.min(40,d.t+(e.clientY-d.y)*0.35)); CoverWorkspace.applyMockTransform(); });
+    const end = ()=>{ d = null; st.style.cursor='grab'; };
+    st.addEventListener('pointerup',end); st.addEventListener('pointercancel',end);
+  },
   toggleAutoRotate(){
     if(CoverWorkspace._autoRotate){ clearInterval(CoverWorkspace._autoRotate); CoverWorkspace._autoRotate = null; }
     else {
       CoverWorkspace._autoRotate = setInterval(()=>{
-        CoverWorkspace.mockAngle = ((CoverWorkspace.mockAngle||0)+2)%360;
-        const book = document.getElementById('cvwsMockBook');
-        if(book) book.style.transform = `rotateY(${CoverWorkspace.mockAngle}deg)`;
-        else { clearInterval(CoverWorkspace._autoRotate); CoverWorkspace._autoRotate = null; }
-      }, 50);
+        if(!document.getElementById('cvwsMockBook')){ clearInterval(CoverWorkspace._autoRotate); CoverWorkspace._autoRotate = null; return; }
+        CoverWorkspace.mockAngle = (CoverWorkspace.mockAngle+1.5)%360; CoverWorkspace.applyMockTransform();
+      }, 40);
     }
-    CoverWorkspace.render3DMock();
+    const b = document.getElementById('cvwsAutoBtn'); if(b) b.textContent = CoverWorkspace._autoRotate ? '⏸ Stop Auto-Rotate' : '▶ Auto-Rotate';
+  },
+  scheduleMockUpdate(delay){
+    clearTimeout(CoverWorkspace._mockTimer);
+    CoverWorkspace._mockTimer = setTimeout(()=>CoverWorkspace.updateMockTextures(), delay==null?140:delay);
+  },
+  async updateMockTextures(){
+    const p = currentProject(); const book = document.getElementById('cvwsMockBook'); if(!p || !book) return;
+    const cm = p.coverMeta || {}; const g = CoverWorkspace._geom(cm,70);
+    await CoverWorkspace.ensureFonts(cm);
+    const imgs = await CoverWorkspace._gather(cm);
+    if(book !== document.getElementById('cvwsMockBook')) return;
+    const cv = document.createElement('canvas'); cv.width = g.W; cv.height = g.H;
+    CoverWorkspace.paint(cv.getContext('2d'),g,imgs,cm,{guides:false, placeholders:false, foil:'fx'});
+    const crop = (sx,sw)=>{ const c = document.createElement('canvas'); c.width = Math.max(1,Math.round(sw)); c.height = Math.round(g.trimH*g.PPI); c.getContext('2d').drawImage(cv,sx,g.bleedPx,sw,g.trimH*g.PPI,0,0,c.width,c.height); return c; };
+    const setBg = (sel,c)=>{ const el = book.querySelector(sel); if(el) el.style.backgroundImage = `url(${c.toDataURL('image/jpeg',0.9)})`; };
+    const front = crop(g.frontX,g.trimW*g.PPI), back = crop(g.bleedPx,g.trimW*g.PPI);
+    setBg('.mf-front',front); setBg('.mf-back',back);
+    const spineEl = book.querySelector('.mf-spine');
+    if(g.binding==='spined'){ if(spineEl){ spineEl.style.background=''; setBg('.mf-spine',crop(g.backW,Math.max(1,g.spineW))); } }
+    else if(spineEl){
+      // fold: average colour of the front cover's hinge edge
+      const strip = document.createElement('canvas'); strip.width = 1; strip.height = 1;
+      strip.getContext('2d').drawImage(front,0,0,Math.max(2,front.width*.03),front.height,0,0,1,1);
+      const [r,gg,b] = strip.getContext('2d').getImageData(0,0,1,1).data;
+      spineEl.style.backgroundImage = 'none';
+      spineEl.style.backgroundColor = `rgb(${r},${gg},${b})`;
+    }
   },
 
   /* ---- A/B compare ---- */
@@ -4641,34 +5064,43 @@ const CoverWorkspace = {
     CoverWorkspace.drawBarcodeOnCanvas(ctx, bc, 10, 5, 3, 50);
     if(status) status.textContent = `Valid EAN-13: ${bc.join('')} (check digit ${bc[12]} computed from the ${digits.length===13?'first 12':digits.length} you entered)`;
   },
-  exportSeparatedPlates(){
+  async exportSeparatedPlates(){
     const p = currentProject(); if(!p) return;
     const cm = p.coverMeta || {};
     if(typeof window.jspdf==='undefined'){ toast('PDF library did not load — check your connection.'); return; }
-    const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, pageCount = parseInt(cm.pageCount)||32;
-    const stock = CoverWorkspace.PAPER_STOCKS[cm.paperStockKey||'white_60'] || CoverWorkspace.PAPER_STOCKS.white_60;
-    const bleed = 0.125; const spineWidth = pageCount*stock.caliper;
-    const fullWrapW = (trimW+bleed)*2+spineWidth, fullWrapH = trimH+bleed*2;
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({unit:'in', format:[fullWrapW, fullWrapH], orientation: fullWrapW>fullWrapH?'landscape':'portrait'});
+    toast('Building print PDF…');
+    await CoverWorkspace.ensureFonts(cm);
+    const imgs = await CoverWorkspace._gather(cm);
+    let ppi = 300, jpeg = null, g = null;
+    for(const tryPpi of [300,200,150]){
+      try{
+        g = CoverWorkspace._geom(cm,tryPpi);
+        const cv = document.createElement('canvas'); cv.width = g.W; cv.height = g.H;
+        CoverWorkspace.paint(cv.getContext('2d'),g,imgs,cm,{guides:false, placeholders:false, foil:'none', emptyFill:'#ffffff'});
+        const d = cv.toDataURL('image/jpeg',0.93);
+        if(d && d.length>100){ jpeg = d; ppi = tryPpi; break; }
+      }catch(err){ console.warn('Export at '+tryPpi+' PPI failed', err); }
+    }
+    if(!jpeg){ toast('Could not render the cover — try a smaller trim size.'); return; }
+    const { fullW:fullWrapW, fullH:fullWrapH, bleed, spineIn:spineWidth, backW:_b, frontX:_f, trimW } = g;
     const backW = trimW+bleed, frontX = backW+spineWidth;
-    const fmtOf = (d)=>/image\/png/i.test(d)?'PNG':/image\/webp/i.test(d)?'WEBP':'JPEG';
-    doc.setFontSize(9); doc.setTextColor(120);
-    doc.text('Plate 1 — Artwork (verify exact CMYK conversion in your print app before sending to press)', 0.1, 0.15);
-    try{
-      if(cm.backImg) doc.addImage(cm.backImg,fmtOf(cm.backImg),0,0,backW,fullWrapH,undefined,'FAST');
-      if(cm.spineImg) doc.addImage(cm.spineImg,fmtOf(cm.spineImg),backW,0,spineWidth,fullWrapH,undefined,'FAST');
-      if(cm.frontImg) doc.addImage(cm.frontImg,fmtOf(cm.frontImg),frontX,0,backW,fullWrapH,undefined,'FAST');
-    }catch(err){ console.error('Plate artwork embed failed:', err); }
-    doc.setDrawColor(180,60,60); doc.rect(bleed,bleed,fullWrapW-bleed*2,fullWrapH-bleed*2);
-    doc.line(backW,0,backW,fullWrapH); doc.line(frontX,0,frontX,fullWrapH);
+    const orient = fullWrapW>fullWrapH?'landscape':'portrait';
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'in', format:[fullWrapW, fullWrapH], orientation:orient});
+    const titleLayer = (cm.texts||[]).find(t=>t.kind==='title'&&t.part==='front') || (cm.texts||[]).find(t=>t.part==='front');
+    const authorLayer = (cm.texts||[]).find(t=>t.kind==='author');
+    const one = s=>String(s||'').replace(/\s*\n\s*/g,' ');
+    doc.setProperties({ title:one((titleLayer&&titleLayer.text)||p.name), author:one(authorLayer&&authorLayer.text), subject:'Book cover — print files' });
+    doc.addImage(jpeg,'JPEG',0,0,fullWrapW,fullWrapH,undefined,'FAST');
+    doc.setDrawColor(180,60,60); doc.setLineWidth(0.005); doc.rect(bleed,bleed,fullWrapW-bleed*2,fullWrapH-bleed*2);
+    doc.line(backW,0,backW,fullWrapH); if(spineWidth>0) doc.line(frontX,0,frontX,fullWrapH);
     const foilRegions = (cm.foilRegions||[]).filter(r=>r.kind==='foil');
     const uvRegions = (cm.foilRegions||[]).filter(r=>r.kind==='uv');
     [['Foil', foilRegions], ['Spot UV', uvRegions]].forEach(([label, regions], idx)=>{
-      doc.addPage([fullWrapW, fullWrapH], fullWrapW>fullWrapH?'landscape':'portrait');
+      doc.addPage([fullWrapW, fullWrapH], orient);
       doc.setFillColor(255,255,255); doc.rect(0,0,fullWrapW,fullWrapH,'F');
-      doc.setFontSize(9); doc.setTextColor(120);
-      doc.text(`Plate ${idx+2} — ${label} Mask (black = ${label.toLowerCase()} area)`, 0.1, 0.15);
+      doc.setFontSize(8); doc.setTextColor(120);
+      doc.text(`Plate ${idx+2} — ${label} Mask (black = ${label.toLowerCase()} area)`, 0.15, 0.08+0.06);
       doc.setFillColor(0,0,0);
       regions.forEach(r=>{
         const [ox,ow] = r.part==='back' ? [0,backW] : r.part==='spine' ? [backW,spineWidth] : [frontX,backW];
@@ -4676,8 +5108,29 @@ const CoverWorkspace = {
       });
       doc.setDrawColor(180,60,60); doc.rect(bleed,bleed,fullWrapW-bleed*2,fullWrapH-bleed*2);
     });
+    // spec sheet (letter portrait) so the printer has the numbers in plain text
+    doc.addPage([8.5,11],'portrait');
+    doc.setTextColor(20); doc.setFontSize(16); doc.text('Cover print specification',0.75,0.9);
+    doc.setFontSize(11);
+    const bc = cm.isbn ? CoverWorkspace.computeEAN13(cm.isbn) : null;
+    const rows = [
+      ['Title', one((titleLayer&&titleLayer.text)||p.name)],
+      ['Author', one(authorLayer&&authorLayer.text)||'—'],
+      ['ISBN-13', bc ? bc.join('') : (cm.isbn ? cm.isbn+' (incomplete — barcode not generated)' : '—')],
+      ['Binding', g.binding==='stapled' ? 'Stapled (saddle stitch) — no spine' : 'Perfect bound (spined)'],
+      ['Trim size', `${g.trimW}" × ${g.trimH}"`],
+      ['Page count', String(g.pageCount)],
+      ['Paper stock', g.stock.label],
+      ['Spine width', g.binding==='stapled' ? 'none' : `${g.spineIn.toFixed(3)}"`],
+      ['Full wrap size', `${fullWrapW.toFixed(3)}" × ${fullWrapH.toFixed(3)}" (includes ${bleed}" bleed)`],
+      ['Artwork resolution', `${ppi} PPI, RGB — convert to CMYK in your print app`],
+      ['Foil regions', String(foilRegions.length)], ['Spot UV regions', String(uvRegions.length)]
+    ];
+    rows.forEach(([a,b],i)=>{ doc.setFont(undefined,'bold'); doc.text(a,0.75,1.5+i*0.32); doc.setFont(undefined,'normal'); doc.text(String(b),2.7,1.5+i*0.32); });
+    doc.setFontSize(9); doc.setTextColor(120);
+    doc.text('Page 1: cover artwork (red lines = trim and fold guides). Page 2: foil mask. Page 3: spot UV mask. Page 4: this sheet.',0.75,1.5+rows.length*0.32+0.3);
     doc.save(`${p.name.replace(/[^a-z0-9]+/gi,'_')}_Separated_Plates.pdf`);
-    toast('Separated plates exported — Plate 1 artwork, Plate 2 foil mask, Plate 3 spot UV mask.');
+    toast('Print PDF exported — cover with title, text & ISBN barcode, foil mask, spot UV mask, spec sheet.');
   }
 };
 
@@ -5958,14 +6411,15 @@ const Assets = {
       }
       return `
       <div class="asset-card">
-        <div class="asset-thumb" ${a.isRefSet?`style="cursor:pointer;" onclick="Board.open('${a.id}')"`:(a.isSequence?`style="cursor:pointer;" onclick="StoryboardSeq.open('${a.id}')"`:(thumb?`style="cursor:zoom-in;" onclick="Assets.preview('${a.id}')"`:''))}>${thumb?`<img src="${thumb}">`:(a.driveLink?'🔗 linked file':'no image')}${a.isRefSet?`<span class="ref-badge">${refCount} img${refCount===1?'':'s'}</span>`:''}${a.isSequence?`<span class="ref-badge">${panelCount} panel${panelCount===1?'':'s'}</span>`:''}${(!a.isRefSet && a.driveUrl)?'<div class="board-cloud-badge" title="Synced to Drive">☁</div>':''}</div>
+        <div class="asset-thumb" ${a.isRefSet?`style="cursor:pointer;" onclick="Board.open('${a.id}')"`:(a.isSequence?`style="cursor:pointer;" onclick="StoryboardSeq.open('${a.id}')"`:(thumb?`style="cursor:zoom-in;" onclick="Assets.preview('${a.id}')"`:''))}>${thumb?`<img src="${thumb}">`:(a.rigId?'🧊 3D model':(a.driveLink?'🔗 linked file':'no image'))}${a.isRefSet?`<span class="ref-badge">${refCount} img${refCount===1?'':'s'}</span>`:''}${a.isSequence?`<span class="ref-badge">${panelCount} panel${panelCount===1?'':'s'}</span>`:''}${(!a.isRefSet && a.driveUrl)?'<div class="board-cloud-badge" title="Synced to Drive">☁</div>':''}</div>
         <div class="asset-body">
           <h4>${escapeHtml(a.name)}</h4>
-          <div class="atype">${escapeHtml(a.type)} ${a.version?'· '+escapeHtml(a.version):''}${a.isRefSet?' · reference board':''}${a.isSequence?' · panel sequence':''}${a.colorProfile?` · <span style="color:${a.colorProfile==='CMYK'?'var(--gold-bright)':'var(--text-faint)'};">${a.colorProfile}</span>`:''}</div>
+          <div class="atype">${escapeHtml(a.type)} ${a.version?'· '+escapeHtml(a.version):''}${a.isRefSet?' · reference board':''}${a.isSequence?' · panel sequence':''}${a.rigId?' · 3D model':''}${a.colorProfile?` · <span style="color:${a.colorProfile==='CMYK'?'var(--gold-bright)':'var(--text-faint)'};">${a.colorProfile}</span>`:''}</div>
         </div>
         <div class="asset-actions">
           ${a.isRefSet?`<button class="btn btn-sm btn-gold" onclick="Board.open('${a.id}')">Board</button>`:''}
           ${a.isSequence?`<button class="btn btn-sm btn-gold" onclick="StoryboardSeq.open('${a.id}')">Panels${panelCount?` (${panelCount})`:''}</button>`:''}
+          ${a.rigId?`<button class="btn btn-sm btn-gold" onclick="Assets.openIn3D('${a.rigId}')">Open in 3D</button>`:''}
           ${canQuickSync?`<button class="btn btn-sm" onclick="Assets.syncToCloud('${a.id}')">☁ Sync</button>`:''}
           <button class="btn btn-sm" onclick="Modals.editAsset('${a.id}')">Edit</button>
           <button class="btn btn-sm btn-danger" onclick="Assets.hideFromApp('${a.id}')">Remove</button>
@@ -6040,7 +6494,10 @@ const Assets = {
     await DB.put('assets',a);
     toast('Image(s) removed, metadata kept.'); Modals.close(); Assets.render();
   },
+  openIn3D(rigId){ Workspace3D.activeId = rigId; Router.go('anim3d'); },
   async hideFromApp(id){
+    const a0 = State.assets.find(x=>x.id===id);
+    if(a0 && a0.rigId){ if(State.rigassets.find(r=>r.id===a0.rigId)) return Workspace3D.deleteRig(a0.rigId); }
     if(!confirm('Remove this asset from the active project view? The record is kept but hidden.')) return;
     const a = State.assets.find(x=>x.id===id);
     a.hidden = true;
@@ -7390,6 +7847,7 @@ const Workspace3D = {
     Modals.open(`<h3>Add Rig Asset</h3>
       <div class="field"><label>Name</label><input type="text" id="mRigName" placeholder="Hero Character"></div>
       <div class="field"><label>Model file (.glb)</label><input type="file" id="mRigFile" accept=".glb,model/gltf-binary"></div>
+      <div class="field"><label>Asset type (shown in the Assets list)</label><select id="mRigAssetType"><option>Prop</option><option>Character Design</option><option>Background</option><option>Reference</option></select></div>
       <div class="cvws-field-row"><div class="field"><label>Current Version</label><input type="number" id="mRigCurVer" value="1"></div><div class="field"><label>Latest Version</label><input type="number" id="mRigLatestVer" value="1"></div></div>
       <div class="field"><label>Texture Set</label><input type="text" id="mRigTex" placeholder="hero_v2_diffuse"></div>
       <div class="field"><label>Lighting Cache</label><input type="text" id="mRigLight" placeholder="int_scene04_bake"></div>
@@ -7407,7 +7865,30 @@ const Workspace3D = {
       textureSet: document.getElementById('mRigTex').value.trim(), lightingCache: document.getElementById('mRigLight').value.trim(),
       passes:{}, frameDraws:{} };
     await DB.put('rigassets',rig); State.rigassets.push(rig);
+    // Mirror the 3D model into the main Assets list
+    const a = { id:uid(), projectId:p.id, name, type:(document.getElementById('mRigAssetType')||{}).value||'Prop',
+      version:'v'+rig.currentVersion, driveLink:'', imageData:null, videoData:null, isRefSet:false, includeInBook:false,
+      relatedShot:'', relatedTask:'', notes:'3D model — linked to the 3D Workspace rig list.', rigId:rig.id };
+    await DB.put('assets',a); State.assets.push(a);
+    rig.assetId = a.id; await DB.put('rigassets',rig);
     Modals.close(); Workspace3D.renderRigList(); Workspace3D.selectRig(rig.id);
+    if(typeof Assets!=='undefined') Assets.render();
+    toast('Added to 3D Workspace and Assets.');
+  },
+  async deleteRig(id){
+    const rig = State.rigassets.find(x=>x.id===id); if(!rig) return;
+    if(!confirm('Delete "'+rig.name+'" from the 3D Workspace? Its linked entry in Assets is removed too. This cannot be undone.')) return;
+    await DB.del('rigassets',id);
+    State.rigassets = State.rigassets.filter(x=>x.id!==id);
+    for(const a of State.assets.filter(x=>x.rigId===id || x.id===rig.assetId)){ await DB.del('assets',a.id); }
+    State.assets = State.assets.filter(x=>!(x.rigId===id || x.id===rig.assetId));
+    if(Workspace3D.activeId===id){
+      Workspace3D.activeId = null;
+      if(Workspace3D.currentModel && Workspace3D.scene){ Workspace3D.scene.remove(Workspace3D.currentModel); Workspace3D.currentModel=null; }
+    }
+    Workspace3D.render();
+    if(typeof Assets!=='undefined') Assets.render();
+    toast('3D asset deleted.');
   },
   renderRigList(){
     const p = currentProject(); const wrap = document.getElementById('tdwsRigList'); if(!wrap) return;
@@ -7416,7 +7897,7 @@ const Workspace3D = {
     wrap.innerHTML = rigs.length ? rigs.map(r=>{
       const outdated = (r.currentVersion||1) < (r.latestVersion||1);
       return `<div class="tdws-rig-row ${r.id===Workspace3D.activeId?'active':''}" onclick="Workspace3D.selectRig('${r.id}')">
-        <div class="name">${escapeHtml(r.name)} <span class="ver ${outdated?'outdated':''}">v${r.currentVersion||1}${outdated?' (latest v'+r.latestVersion+')':''}</span></div>
+        <div class="name"><span>${escapeHtml(r.name)}</span> <span style="display:flex;gap:6px;align-items:center;"><span class="ver ${outdated?'outdated':''}">v${r.currentVersion||1}${outdated?' (latest v'+r.latestVersion+')':''}</span><button class="btn btn-sm btn-danger" title="Delete this 3D asset" style="padding:0 6px;line-height:18px;" onclick="event.stopPropagation();Workspace3D.deleteRig('${r.id}')">✕</button></span></div>
         <div class="meta">${r.textureSet?'tex: '+escapeHtml(r.textureSet):'no texture tag'} · ${r.lightingCache?'light: '+escapeHtml(r.lightingCache):'no light cache'}</div>
       </div>`;
     }).join('') : '<div class="help-block" style="padding:12px;">No rig assets yet.</div>';
