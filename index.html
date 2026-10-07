@@ -4097,12 +4097,13 @@ const Spreads = {
     if(spreads.length===0){ wrap.innerHTML = `<div class="empty"><div class="empty-title">No spreads yet</div>Break down your manuscript, or add spreads one at a time.</div>`; return; }
     wrap.innerHTML = `<table><thead><tr><th>#</th><th>Pages</th><th>Text</th><th>Characters</th><th>Status</th><th></th></tr></thead><tbody>
       ${spreads.map(s=>`<tr>
-        <td style="font-family:var(--font-mono);">${s.spreadIndex}</td>
-        <td>${escapeHtml(s.pageRange||'')}</td>
+        <td style="font-family:var(--font-mono);cursor:pointer;color:var(--gold-bright);" title="Open in Book Workspace" onclick="Spreads.openInWorkspace('${s.id}')">${s.spreadIndex}</td>
+        <td style="cursor:pointer;" title="Open in Book Workspace" onclick="Spreads.openInWorkspace('${s.id}')">${escapeHtml(s.pageRange||'')}</td>
         <td style="max-width:280px;color:var(--text-muted);">${escapeHtml((s.text||'').slice(0,140))}${(s.text||'').length>140?'…':''}</td>
         <td style="font-size:12px;color:var(--gold-bright);">${escapeHtml((s.characters||[]).join(', '))}</td>
         <td><span class="pchip status-${s.status}">${(s.status||'not_started').replace('_',' ')}</span></td>
         <td class="row-actions">
+          <button class="btn btn-sm" onclick="Spreads.openInWorkspace('${s.id}')">Open</button>
           <button class="btn btn-sm" onclick="Spreads.editSpread('${s.id}')">Edit</button>
           <button class="btn btn-sm btn-danger" onclick="Spreads.remove('${s.id}')">Delete</button>
         </td>
@@ -4135,6 +4136,10 @@ const Spreads = {
       status:document.getElementById('mSpreadStatus').value, imageData:null};
     await DB.put('spreads',s); State.spreads.push(s);
     Modals.close(); Spreads.render();
+  },
+  openInWorkspace(id){
+    BookWorkspace.activeSpreadId = id; BookWorkspace.sel = null;
+    Router.go('bookws');
   },
   editSpread(id){
     const s = State.spreads.find(x=>x.id===id); if(!s) return;
@@ -4188,7 +4193,7 @@ const Spreads = {
       names.map(name=>`<div style="margin-bottom:14px;">
         <div style="font-family:var(--font-display);color:var(--gold-bright);margin-bottom:6px;">${escapeHtml(name)} <span style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;">(${byChar[name].length} spread${byChar[name].length===1?'':'s'})</span></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${byChar[name].map(s=>`<span class="pchip status-${s.status}" style="cursor:pointer;" onclick="Modals.close(); Spreads.editSpread('${s.id}')">#${s.spreadIndex}${s.pageRange?' · '+escapeHtml(s.pageRange):''}</span>`).join('')}
+          ${byChar[name].map(s=>`<span class="pchip status-${s.status}" style="cursor:pointer;" title="Open this spread in the Book Workspace" onclick="Modals.close(); Spreads.openInWorkspace('${s.id}')">#${s.spreadIndex}${s.pageRange?' · '+escapeHtml(s.pageRange):''}</span>`).join('')}
         </div>
       </div>`).join('')}
       <div class="modal-actions">
