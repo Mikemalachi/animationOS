@@ -1190,6 +1190,7 @@ tr:hover .row-actions{opacity:1;}
             <div class="ws2d-tool-group"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);"><input type="checkbox" id="bkwsGGutter" style="width:auto;" onchange="BookWorkspace.toggleGuide('gutter',this.checked)"> Gutter Safe-Zone</label></div>
             <div class="ws2d-tool-group"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);"><input type="checkbox" id="bkwsGCmyk" style="width:auto;" onchange="BookWorkspace.toggleGuide('cmyk',this.checked)"> CMYK Preview</label></div>
             <div class="ws2d-tool-group" style="border-right:none;margin-left:auto;">
+              <button class="btn btn-sm" onclick="BookWorkspace.openExport()" title="Print-ready PDF of every interior page">⬇ Export Interior PDF</button>
               <button class="btn btn-sm btn-gold" onclick="BookWorkspace.openDigitalDummy()">📖 Digital Dummy</button>
             </div>
           </div>
@@ -5994,7 +5995,8 @@ const BookWorkspace = {
     BookWorkspace.renderPageTree(); BookWorkspace.renderPreflight(); BookWorkspace.renderPacingStrip(); BookWorkspace.renderImagesPanel(); BookWorkspace._refreshAll();
     toast(`Linked box created on spread ${targetSp.spreadIndex}, ${side==='left'?'left':'right'} page — overflow text will flow into it.`);
   },
-  async _composite(s,ppi){
+  async _composite(s,ppi){ const c = await BookWorkspace._compositeCanvas(s,ppi); const u = c.toDataURL('image/jpeg',0.9); c.width = c.height = 0; return u; },
+  async _compositeCanvas(s,ppi){
     const p = currentProject(); const cm = p.coverMeta||{};
     const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, bleed = 0.125;
     const c = document.createElement('canvas'); c.width = Math.round((trimW*2+bleed*2)*ppi); c.height = Math.round((trimH+bleed*2)*ppi);
@@ -6005,7 +6007,7 @@ const BookWorkspace = {
     if(s.imageData){ try{ const img = await BookWorkspace._img(s.imageData); ctx.drawImage(img,0,0,c.width,c.height); }catch(e){} }
     BookWorkspace._paintLayers(ctx,s,limgs,ppi,trimW,trimH,bleed,null);
     BookWorkspace._paintTexts(ctx,p,s,ppi,trimW,trimH,bleed,null);
-    return c.toDataURL('image/jpeg',0.9);
+    return c;
   },
   wireCanvas(){
     const c = document.getElementById('bkwsCanvas'); if(!c || c._bkwsWired) return; c._bkwsWired = true;
@@ -6532,6 +6534,111 @@ const BookWorkspace = {
         <div class="lbl">#${s.spreadIndex}</div>
       </div>`;
     }).join('') : '<div class="help-block">No spreads yet.</div>';
+  },
+
+  /* ---- Print-ready interior PDF ---- */
+  _expDefaults(){ return {mode:'pages', dpi:300, bleed:true, marks:false, blankFirst:false, padTo:'0', quality:'0.92'}; },
+  _expOpts(){
+    const p = currentProject(); const d = Object.assign(BookWorkspace._expDefaults(), (p&&p.bookExport)||{});
+    const g = id=>document.getElementById(id);
+    if(g('bkExpDpi')){ d.mode = (document.querySelector('input[name="bkExpMode"]:checked')||{}).value || d.mode; d.dpi = parseInt(g('bkExpDpi').value,10)||300; d.bleed = g('bkExpBleed').checked; d.marks = g('bkExpMarks').checked; d.blankFirst = g('bkExpBlank').checked; d.padTo = g('bkExpPad').value; d.quality = g('bkExpQ').value; }
+    return d;
+  },
+  _pagePlan(p,o){
+    const spreads = projSpreads(p.id).slice().sort((a,b)=>(a.spreadIndex||0)-(b.spreadIndex||0)); const cm = p.coverMeta||{};
+    if(o.mode==='spreads') return spreads.map(sp=>({type:'spread',sp}));
+    const seq = []; if(o.blankFirst) seq.push({type:'blank',side:'right'});
+    spreads.forEach(sp=>{ seq.push({type:'page',sp,side:'left'}); seq.push({type:'page',sp,side:'right'}); });
+    let target = seq.length;
+    if(o.padTo==='4') target = Math.ceil(seq.length/4)*4; else if(o.padTo==='8') target = Math.ceil(seq.length/8)*8; else if(o.padTo==='cover') target = Math.max(seq.length, parseInt(cm.pageCount,10)||0);
+    while(seq.length<target){ const last = seq[seq.length-1]; seq.push({type:'blank',side: last && last.side==='left' ? 'right' : 'left'}); }
+    return seq;
+  },
+  openExport(){
+    const p = currentProject(); if(!p) return; if(!projSpreads(p.id).length){ toast('Add at least one spread first.'); return; }
+    const o = Object.assign(BookWorkspace._expDefaults(), p.bookExport||{});
+    Modals.open(`
+      <h3>Export Interior PDF</h3>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">One print-ready PDF of the whole interior — artwork, page colors, PNGs and all text frames exactly as they look on the canvas.</div>
+      <div class="field"><label>Pages</label>
+        <label style="display:flex;gap:6px;font-size:13px;"><input type="radio" name="bkExpMode" value="pages" ${o.mode==='pages'?'checked':''} onchange="BookWorkspace._expSummary()"> Single pages in reading order <span style="color:var(--text-faint)">(what printers like KDP / IngramSpark want)</span></label>
+        <label style="display:flex;gap:6px;font-size:13px;"><input type="radio" name="bkExpMode" value="spreads" ${o.mode==='spreads'?'checked':''} onchange="BookWorkspace._expSummary()"> Spreads, one per page <span style="color:var(--text-faint)">(for review / digital)</span></label></div>
+      <div class="cvws-field-row"><div class="field"><label>Resolution</label><select id="bkExpDpi" onchange="BookWorkspace._expSummary()">${[300,200,150].map(v=>`<option value="${v}" ${o.dpi===v?'selected':''}>${v} PPI${v===300?' (print)':v===150?' (draft)':''}</option>`).join('')}</select></div>
+        <div class="field"><label>JPEG quality</label><select id="bkExpQ"><option value="0.95" ${o.quality==='0.95'?'selected':''}>Maximum</option><option value="0.92" ${o.quality==='0.92'?'selected':''}>High</option><option value="0.8" ${o.quality==='0.8'?'selected':''}>Smaller file</option></select></div></div>
+      <label style="display:flex;gap:6px;font-size:13px;margin:6px 0;"><input type="checkbox" id="bkExpBleed" ${o.bleed?'checked':''} onchange="BookWorkspace._expSummary()"> Include 0.125" bleed (outer edges, top and bottom)</label>
+      <label style="display:flex;gap:6px;font-size:13px;margin:6px 0;"><input type="checkbox" id="bkExpMarks" ${o.marks?'checked':''} onchange="BookWorkspace._expSummary()"> Add trim (crop) marks <span style="color:var(--text-faint)">— most online printers do NOT want these</span></label>
+      <div id="bkExpPageOpts">
+        <label style="display:flex;gap:6px;font-size:13px;margin:6px 0;"><input type="checkbox" id="bkExpBlank" ${o.blankFirst?'checked':''} onchange="BookWorkspace._expSummary()"> Start with a blank page 1, so spread 1 begins on page 2</label>
+        <div class="field"><label>Pad the end with blank pages</label><select id="bkExpPad" onchange="BookWorkspace._expSummary()"><option value="0" ${o.padTo==='0'?'selected':''}>No padding</option><option value="4" ${o.padTo==='4'?'selected':''}>To a multiple of 4</option><option value="8" ${o.padTo==='8'?'selected':''}>To a multiple of 8</option><option value="cover" ${o.padTo==='cover'?'selected':''}>To the page count in Cover settings</option></select></div></div>
+      <div id="bkExpSummary" style="background:var(--bg-elevated);border-radius:8px;padding:10px;font-size:12px;line-height:1.55;margin:10px 0;"></div>
+      <div class="modal-actions"><button class="btn" onclick="Modals.close()">Cancel</button><button class="btn btn-gold" onclick="BookWorkspace.exportInteriorPdf()">⬇ Export PDF</button></div>`);
+    BookWorkspace._expSummary();
+  },
+  _expSummary(){
+    const p = currentProject(); const el = document.getElementById('bkExpSummary'); if(!p||!el) return;
+    const o = BookWorkspace._expOpts(); const cm = p.coverMeta||{}; const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, b = o.bleed?0.125:0, slug = o.marks?0.25:0;
+    const plan = BookWorkspace._pagePlan(p,o); document.getElementById('bkExpPageOpts').style.display = o.mode==='pages' ? '' : 'none';
+    const pw = o.mode==='spreads' ? trimW*2+b*2 : trimW+b, ph = trimH+b*2;
+    const blanks = plan.filter(x=>x.type==='blank').length, emptySp = projSpreads(p.id).filter(sp=>!sp.imageData && !sp.bgLeft && !sp.bgRight && !(sp.layers||[]).length && !BookWorkspace._texts(sp).some(t=>(t.text||'').trim())).length;
+    const fm = BookWorkspace._flow(p); const ovf = [...fm.values()].filter(i=>i.overflow).length;
+    const want = parseInt(cm.pageCount,10)||0; const rows = [];
+    rows.push(`<b>${plan.length}</b> ${o.mode==='spreads'?'spread page':'page'}${plan.length===1?'':'s'}${blanks?` (including ${blanks} blank)`:''} · each <b>${(pw+slug*2).toFixed(3)}" × ${(ph+slug*2).toFixed(3)}"</b> at ${o.dpi} PPI`);
+    if(o.mode==='pages' && want && plan.length!==want) rows.push(`<span style="color:var(--gold-bright)">Your Cover settings say ${want} pages — this PDF has ${plan.length}. The cover spine width depends on the page count.</span>`);
+    if(o.mode==='pages' && plan.length%2) rows.push(`<span style="color:var(--gold-bright)">Odd page count — printers need an even number (use the padding option).</span>`);
+    if(emptySp) rows.push(`<span style="color:var(--gold-bright)">${emptySp} spread${emptySp===1?' is':'s are'} completely empty and will print blank.</span>`);
+    if(ovf) rows.push(`<span style="color:#ff6b6b">${ovf} linked text chain${ovf===1?'':'s'} still overflow — text past the last box will be cut off.</span>`);
+    el.innerHTML = rows.join('<br>');
+  },
+  async exportInteriorPdf(){
+    const p = currentProject(); if(!p) return; const o = BookWorkspace._expOpts(); p.bookExport = {mode:o.mode,dpi:o.dpi,bleed:o.bleed,marks:o.marks,blankFirst:o.blankFirst,padTo:o.padTo,quality:o.quality}; DB.put('projects',p);
+    Modals.close();
+    if(typeof window.jspdf==='undefined'){ toast('PDF library did not load — check your connection.'); return; }
+    const cm = p.coverMeta||{}; const trimW = parseFloat(cm.trimW)||8.5, trimH = parseFloat(cm.trimH)||8.5, B = 0.125, ppi = o.dpi, b = o.bleed?B:0, slug = o.marks?0.25:0, q = parseFloat(o.quality)||0.92;
+    const plan = BookWorkspace._pagePlan(p,o); if(!plan.length){ toast('Nothing to export.'); return; }
+    const spread = o.mode==='spreads';
+    const pageW = spread ? trimW*2+b*2 : trimW+b, pageH = trimH+b*2, W = pageW+slug*2, H = pageH+slug*2;
+    const { jsPDF } = window.jspdf; const orient = W>H?'landscape':'portrait';
+    const doc = new jsPDF({unit:'in', format:[W,H], orientation:orient});
+    const one = x=>String(x||'').replace(/\s*\n\s*/g,' ');
+    const titleLayer = (cm.texts||[]).find(t=>t.kind==='title'&&t.part==='front') || (cm.texts||[]).find(t=>t.part==='front'); const authorLayer = (cm.texts||[]).find(t=>t.kind==='author');
+    doc.setProperties({title:one((titleLayer&&titleLayer.text)||p.name)+' — interior', author:one(authorLayer&&authorLayer.text), subject:'Book interior — print files'});
+    Progress.show('Building interior PDF…'); let lowest = null;
+    const cache = new Map();
+    try{
+      for(let i=0;i<plan.length;i++){
+        const it = plan[i]; Progress.setLabel(`Rendering ${i+1} of ${plan.length}…`); Progress.update(i/plan.length*95);
+        await new Promise(r=>setTimeout(r,0));
+        if(i>0) doc.addPage([W,H],orient);
+        // which side of the sheet is the outer (trimmed) edge — for crop marks
+        let side = it.type==='spread' ? 'both' : it.side;
+        if(it.type!=='blank'){
+          const sp = it.sp; let cv = cache.get(sp.id); if(!cv){ cache.clear(); cv = await BookWorkspace._compositeCanvas(sp,ppi); cache.set(sp.id,cv);
+            if(sp.imageData){ try{ const im = await BookWorkspace._img(sp.imageData); const dpi = im.naturalWidth/(trimW*2+B*2); if(lowest===null || dpi<lowest.dpi) lowest = {dpi, idx:sp.spreadIndex}; }catch(e){} } }
+          const bp = B*ppi, tw = trimW*ppi, th = trimH*ppi; let sx, sw;
+          if(spread){ sx = o.bleed ? 0 : bp; sw = o.bleed ? cv.width : tw*2; }
+          else if(it.side==='left'){ sx = o.bleed ? 0 : bp; sw = o.bleed ? bp+tw : tw; }
+          else { sx = bp+tw; sw = o.bleed ? tw+bp : tw; }
+          const sy = o.bleed ? 0 : bp, sh = o.bleed ? cv.height : th;
+          const out = document.createElement('canvas'); out.width = Math.round(sw); out.height = Math.round(sh);
+          out.getContext('2d').drawImage(cv,Math.round(sx),Math.round(sy),Math.round(sw),Math.round(sh),0,0,out.width,out.height);
+          const jpeg = out.toDataURL('image/jpeg',q); out.width = out.height = 0;
+          doc.addImage(jpeg,'JPEG',slug,slug,pageW,pageH,undefined,'FAST');
+        }
+        if(o.marks){
+          // trim box inside the page image
+          const tl = slug + (spread ? b : (side==='left' ? b : 0)), tr = tl + (spread ? trimW*2 : trimW), tt = slug+b, tb = tt+trimH;
+          const gap = b+0.03, len = 0.2; doc.setDrawColor(0,0,0); doc.setLineWidth(0.005);
+          const corner = (x,y,dx,dy)=>{ doc.line(x+dx*gap,y,x+dx*(gap+len),y); doc.line(x,y+dy*gap,x,y+dy*(gap+len)); };
+          if(spread || side==='left'){ corner(tl,tt,-1,-1); corner(tl,tb,-1,1); }
+          if(spread || side==='right'){ corner(tr,tt,1,-1); corner(tr,tb,1,1); }
+        }
+      }
+      doc.save(`${p.name.replace(/[^a-z0-9]+/gi,'_')}_Interior_${spread?'Spreads':'Pages'}.pdf`);
+      Progress.update(100); Progress.hide();
+      const warn = lowest && lowest.dpi<295 ? ` Lowest artwork resolution: ${Math.round(lowest.dpi)} DPI (spread ${lowest.idx}) — below 300.` : '';
+      toast(`Interior PDF exported — ${plan.length} ${spread?'spread':'page'}${plan.length===1?'':'s'} at ${ppi} PPI.${warn}`);
+    }catch(err){ console.error(err); Progress.hide(0); toast('Export failed: '+(err.message||err)+' — try a lower resolution.'); }
+    cache.forEach(c=>{ c.width = c.height = 0; });
   },
 
   /* ---- Interactive digital dummy ---- */
